@@ -7,10 +7,33 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { PLATFORMS } from '@/lib/constants';
 import { createClient } from '@/lib/supabase/client';
-import { Eye, EyeOff, CheckCircle2, XCircle, Code, ChefHat, Terminal, BookOpen, KeyRound, Save, Loader2, Sparkles } from 'lucide-react';
-import { saveGeminiKey, getGeminiKeyHint, savePlatformHandle, getPlatformHandles, testGeminiKey } from './actions';
+import { 
+  Eye, 
+  EyeOff, 
+  CheckCircle2, 
+  XCircle, 
+  Code, 
+  ChefHat, 
+  Terminal, 
+  BookOpen, 
+  KeyRound, 
+  Save, 
+  Loader2, 
+  Sparkles, 
+  Trash2, 
+  ExternalLink,
+  RefreshCw
+} from 'lucide-react';
+import { 
+  saveGeminiKey, 
+  getGeminiKeyHint, 
+  deleteGeminiKey, 
+  savePlatformHandle, 
+  deletePlatformHandle, 
+  getPlatformHandles, 
+  testGeminiKey 
+} from './actions';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 
 const iconMap: Record<string, React.ReactNode> = {
   'code': <Code className="w-5 h-5" />,
@@ -19,13 +42,34 @@ const iconMap: Record<string, React.ReactNode> = {
   'book-open': <BookOpen className="w-5 h-5" />
 };
 
+function getPlatformProfileUrl(platformId: string, handle: string): string | null {
+  if (!handle) return null;
+  const clean = encodeURIComponent(handle.trim());
+  switch (platformId) {
+    case 'leetcode':
+      return `https://leetcode.com/u/${clean}`;
+    case 'codeforces':
+      return `https://codeforces.com/profile/${clean}`;
+    case 'codechef':
+      return `https://www.codechef.com/users/${clean}`;
+    case 'hackerrank':
+      return `https://www.hackerrank.com/profile/${clean}`;
+    case 'gfg':
+      return `https://www.geeksforgeeks.org/user/${clean}/`;
+    default:
+      return null;
+  }
+}
+
 export default function SettingsPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
   // Handles state
   const [handles, setHandles] = useState<Record<string, { handle: string; cfKey?: string; cfSecret?: string }>>({});
+  const [savedHandles, setSavedHandles] = useState<Record<string, { handle: string; cfKey?: string; cfSecret?: string }>>({});
   const [savingPlatform, setSavingPlatform] = useState<string | null>(null);
+  const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
   
   // Gemini state
   const [geminiKey, setGeminiKey] = useState('');
@@ -33,6 +77,7 @@ export default function SettingsPage() {
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [isSavingGemini, setIsSavingGemini] = useState(false);
   const [isTestingGemini, setIsTestingGemini] = useState(false);
+  const [isDeletingGemini, setIsDeletingGemini] = useState(false);
 
   useEffect(() => {
     async function loadSettings() {
@@ -43,18 +88,19 @@ export default function SettingsPage() {
         if (user) {
           setUserId(user.id);
           
-          // Load handles
-          const handlesRes = await getPlatformHandles(user.id);
+          // Load platform handles
+          const handlesRes = await getPlatformHandles();
           if (handlesRes.success && handlesRes.data) {
             const handlesMap: Record<string, any> = {};
             handlesRes.data.forEach((h: any) => {
               handlesMap[h.platform] = {
-                handle: h.handle,
+                handle: h.handle || '',
                 cfKey: h.codeforces_api_key || '',
                 cfSecret: h.codeforces_api_secret || ''
               };
             });
             setHandles(handlesMap);
+            setSavedHandles(handlesMap);
           }
           
           // Load Gemini Key Hint
@@ -75,33 +121,74 @@ export default function SettingsPage() {
   }, []);
 
   const handleSavePlatform = async (platformId: string) => {
-    if (!userId) return;
-    
     const data = handles[platformId];
-    if (!data || !data.handle.trim()) {
-      toast.error('Please enter a handle');
+    const cleanHandle = data?.handle?.trim() || '';
+
+    if (!cleanHandle) {
+      toast.error('Please enter a username or handle');
       return;
     }
     
     setSavingPlatform(platformId);
     
     try {
-      const res = await savePlatformHandle(userId, platformId, data.handle.trim(), data.cfKey?.trim(), data.cfSecret?.trim());
+      const res = await savePlatformHandle(
+        platformId, 
+        cleanHandle, 
+        data?.cfKey?.trim() || undefined, 
+        data?.cfSecret?.trim() || undefined
+      );
       
       if (res.success) {
-        toast.success(`${platformId} handle saved successfully`);
+        const platformName = PLATFORMS.find(p => p.id === platformId)?.name || platformId;
+        toast.success(`${platformName} handle saved successfully`);
+        setSavedHandles(prev => ({
+          ...prev,
+          [platformId]: {
+            handle: cleanHandle,
+            cfKey: data?.cfKey?.trim() || '',
+            cfSecret: data?.cfSecret?.trim() || ''
+          }
+        }));
       } else {
         toast.error(res.error || `Failed to save ${platformId} handle`);
       }
-    } catch (error) {
-      toast.error(`Error saving ${platformId} handle`);
+    } catch (error: any) {
+      toast.error(error.message || `Error saving ${platformId} handle`);
     } finally {
       setSavingPlatform(null);
     }
   };
 
+  const handleDisconnectPlatform = async (platformId: string) => {
+    setDisconnectingPlatform(platformId);
+    try {
+      const res = await deletePlatformHandle(platformId);
+      if (res.success) {
+        const platformName = PLATFORMS.find(p => p.id === platformId)?.name || platformId;
+        toast.success(`${platformName} disconnected`);
+        setHandles(prev => ({
+          ...prev,
+          [platformId]: { handle: '', cfKey: '', cfSecret: '' }
+        }));
+        setSavedHandles(prev => {
+          const next = { ...prev };
+          delete next[platformId];
+          return next;
+        });
+      } else {
+        toast.error(res.error || `Failed to disconnect ${platformId}`);
+      }
+    } catch (error: any) {
+      toast.error(error.message || `Error disconnecting ${platformId}`);
+    } finally {
+      setDisconnectingPlatform(null);
+    }
+  };
+
   const handleSaveGeminiKey = async () => {
-    if (!geminiKey.trim()) {
+    const cleanKey = geminiKey.trim();
+    if (!cleanKey) {
       toast.error('Please enter an API key');
       return;
     }
@@ -110,7 +197,7 @@ export default function SettingsPage() {
     
     try {
       const formData = new FormData();
-      formData.append('apiKey', geminiKey.trim());
+      formData.append('apiKey', cleanKey);
       
       const res = await saveGeminiKey(formData);
       if (res.success) {
@@ -120,10 +207,27 @@ export default function SettingsPage() {
       } else {
         toast.error(res.error || 'Failed to save Gemini API Key');
       }
-    } catch (error) {
-      toast.error('Error saving Gemini API Key');
+    } catch (error: any) {
+      toast.error(error.message || 'Error saving Gemini API Key');
     } finally {
       setIsSavingGemini(false);
+    }
+  };
+
+  const handleDeleteGeminiKey = async () => {
+    setIsDeletingGemini(true);
+    try {
+      const res = await deleteGeminiKey();
+      if (res.success) {
+        toast.success('Gemini API Key removed');
+        setGeminiKeyHint(null);
+      } else {
+        toast.error(res.error || 'Failed to remove API key');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Error removing API key');
+    } finally {
+      setIsDeletingGemini(false);
     }
   };
 
@@ -136,8 +240,8 @@ export default function SettingsPage() {
       } else {
         toast.error(res.error || 'API Key test failed');
       }
-    } catch (error) {
-      toast.error('Error testing API Key');
+    } catch (error: any) {
+      toast.error(error.message || 'Error testing API Key');
     } finally {
       setIsTestingGemini(false);
     }
@@ -164,7 +268,7 @@ export default function SettingsPage() {
         <div className="h-[250px] bg-slate-900/50 rounded-xl border border-slate-800"></div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[1, 2, 3, 4].map(i => (
+          {[1, 2, 3, 4, 5].map(i => (
             <div key={i} className="h-[200px] bg-slate-900/50 rounded-xl border border-slate-800"></div>
           ))}
         </div>
@@ -173,20 +277,20 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="container max-w-5xl mx-auto py-10 px-4 space-y-10">
+    <div className="container max-w-5xl mx-auto py-10 px-4 space-y-10 animate-fade-in">
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 text-transparent bg-clip-text">
           Settings
         </h1>
         <p className="text-muted-foreground text-lg">
-          Configure your platform handles and API keys
+          Configure your platform handles and API keys for unified problem tracking
         </p>
       </div>
 
       {/* Gemini API Key Section */}
       <section>
         <Card className="border-slate-800 bg-slate-950/50 backdrop-blur-md overflow-hidden relative shadow-lg shadow-purple-900/10 group">
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-500 to-blue-500" />
           
           <CardHeader>
@@ -205,15 +309,22 @@ export default function SettingsPage() {
                 <Input
                   id="gemini-key"
                   type={showGeminiKey ? 'text' : 'password'}
-                  placeholder="Enter your Google Gemini API Key"
+                  placeholder="AIzaSy..."
                   value={geminiKey}
                   onChange={(e) => setGeminiKey(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveGeminiKey();
+                    }
+                  }}
                   className="pr-10 bg-slate-900/80 border-slate-700 focus-visible:ring-purple-500"
                 />
                 <button
                   type="button"
                   onClick={() => setShowGeminiKey(!showGeminiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300 transition-colors p-1"
+                  aria-label={showGeminiKey ? "Hide API key" : "Show API key"}
                 >
                   {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -221,9 +332,21 @@ export default function SettingsPage() {
             </div>
             
             {geminiKeyHint && (
-              <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-400/10 py-2 px-3 rounded-md border border-emerald-400/20 w-fit">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Active Key: {geminiKeyHint}</span>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-emerald-400 bg-emerald-400/10 py-2 px-3 rounded-md border border-emerald-400/20">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>Active Key: <strong className="font-mono">{geminiKeyHint}</strong></span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDeleteGeminiKey}
+                  disabled={isDeletingGemini}
+                  className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  {isDeletingGemini ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Trash2 className="w-3 h-3 mr-1" />}
+                  Remove Key
+                </Button>
               </div>
             )}
           </CardContent>
@@ -253,99 +376,149 @@ export default function SettingsPage() {
 
       {/* Platform Handles Section */}
       <section className="space-y-6">
-        <h2 className="text-2xl font-semibold tracking-tight border-b border-slate-800 pb-2">Platform Handles</h2>
+        <div className="border-b border-slate-800 pb-2 flex items-center justify-between">
+          <h2 className="text-2xl font-semibold tracking-tight">Platform Handles</h2>
+          <span className="text-xs text-muted-foreground">
+            {Object.keys(savedHandles).length} of {PLATFORMS.length} connected
+          </span>
+        </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {PLATFORMS.map((platform) => {
-            const data = handles[platform.id] || { handle: '' };
-            const isConnected = !!data.handle;
+            const data = handles[platform.id] || { handle: '', cfKey: '', cfSecret: '' };
+            const savedData = savedHandles[platform.id];
+            const isConnected = !!savedData?.handle;
             const isSaving = savingPlatform === platform.id;
+            const isDisconnecting = disconnectingPlatform === platform.id;
+            const profileUrl = getPlatformProfileUrl(platform.id, savedData?.handle || data.handle);
             
             return (
               <Card 
                 key={platform.id} 
-                className="border-slate-800 bg-slate-950/50 backdrop-blur-md overflow-hidden relative shadow-lg transition-all duration-300 hover:shadow-slate-900/50 hover:border-slate-700 group"
+                className="border-slate-800 bg-slate-950/50 backdrop-blur-md overflow-hidden relative shadow-lg transition-all duration-300 hover:shadow-slate-900/50 hover:border-slate-700 group flex flex-col justify-between"
               >
                 <div 
                   className="absolute left-0 top-0 bottom-0 w-1 opacity-80"
                   style={{ backgroundColor: platform.color }}
                 />
                 <div 
-                  className="absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity duration-500"
+                  className="absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity duration-500 pointer-events-none"
                   style={{ backgroundImage: `linear-gradient(to bottom right, ${platform.color}, transparent)` }}
                 />
                 
-                <CardHeader className="pb-4">
-                  <div className="flex justify-between items-center">
-                    <CardTitle className="flex items-center gap-3 text-lg">
-                      <div 
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-white"
-                        style={{ backgroundColor: platform.color }}
-                      >
-                        {iconMap[platform.icon]}
-                      </div>
-                      {platform.name}
-                    </CardTitle>
-                    {isConnected ? (
-                      <span className="flex items-center text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full border border-emerald-400/20">
-                        <CheckCircle2 className="w-3 h-3 mr-1" /> Connected
-                      </span>
-                    ) : (
-                      <span className="flex items-center text-xs font-medium text-slate-400 bg-slate-800 px-2 py-1 rounded-full border border-slate-700">
-                        Not Connected
-                      </span>
-                    )}
-                  </div>
-                </CardHeader>
-                
-                <CardContent className="space-y-4 relative z-10">
-                  <div className="space-y-2">
-                    <Label htmlFor={`${platform.id}-handle`}>Username / Handle</Label>
-                    <Input
-                      id={`${platform.id}-handle`}
-                      placeholder={`Enter your ${platform.name} handle`}
-                      value={data.handle}
-                      onChange={(e) => updateHandle(platform.id, 'handle', e.target.value)}
-                      className="bg-slate-900/80 border-slate-700 focus-visible:ring-opacity-50"
-                      style={{ '--tw-ring-color': platform.color } as any}
-                    />
-                  </div>
-                  
-                  {platform.id === 'codeforces' && (
-                    <div className="space-y-4 pt-2 border-t border-slate-800">
-                      <div className="space-y-2">
-                        <Label htmlFor="cf-key" className="text-xs text-slate-400">API Key (Optional for private submissions)</Label>
-                        <Input
-                          id="cf-key"
-                          placeholder="Codeforces API Key"
-                          value={data.cfKey || ''}
-                          onChange={(e) => updateHandle(platform.id, 'cfKey', e.target.value)}
-                          className="bg-slate-900/80 border-slate-700 h-9"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="cf-secret" className="text-xs text-slate-400">API Secret</Label>
-                        <Input
-                          id="cf-secret"
-                          type="password"
-                          placeholder="Codeforces API Secret"
-                          value={data.cfSecret || ''}
-                          onChange={(e) => updateHandle(platform.id, 'cfSecret', e.target.value)}
-                          className="bg-slate-900/80 border-slate-700 h-9"
-                        />
+                <div>
+                  <CardHeader className="pb-4">
+                    <div className="flex justify-between items-center">
+                      <CardTitle className="flex items-center gap-3 text-lg">
+                        <div 
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-white shrink-0"
+                          style={{ backgroundColor: platform.color }}
+                        >
+                          {iconMap[platform.icon]}
+                        </div>
+                        <span>{platform.name}</span>
+                      </CardTitle>
+                      
+                      <div className="flex items-center gap-2">
+                        {isConnected ? (
+                          <span className="flex items-center text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full border border-emerald-400/20">
+                            <CheckCircle2 className="w-3 h-3 mr-1" /> Connected
+                          </span>
+                        ) : (
+                          <span className="flex items-center text-xs font-medium text-slate-400 bg-slate-800 px-2 py-1 rounded-full border border-slate-700">
+                            Not Connected
+                          </span>
+                        )}
                       </div>
                     </div>
-                  )}
-                </CardContent>
+                  </CardHeader>
+                  
+                  <CardContent className="space-y-4 relative z-10">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor={`${platform.id}-handle`}>Username / Handle</Label>
+                        {isConnected && profileUrl && (
+                          <a
+                            href={profileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                          >
+                            <span>View Profile</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                      <Input
+                        id={`${platform.id}-handle`}
+                        placeholder={`Enter your ${platform.name} handle`}
+                        value={data.handle}
+                        onChange={(e) => updateHandle(platform.id, 'handle', e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSavePlatform(platform.id);
+                          }
+                        }}
+                        disabled={isSaving || isDisconnecting}
+                        className="bg-slate-900/80 border-slate-700 focus-visible:ring-opacity-50"
+                      />
+                    </div>
+                    
+                    {platform.id === 'codeforces' && (
+                      <div className="space-y-4 pt-2 border-t border-slate-800">
+                        <div className="space-y-2">
+                          <Label htmlFor="cf-key" className="text-xs text-slate-400">API Key (Optional for private submissions)</Label>
+                          <Input
+                            id="cf-key"
+                            placeholder="Codeforces API Key"
+                            value={data.cfKey || ''}
+                            onChange={(e) => updateHandle(platform.id, 'cfKey', e.target.value)}
+                            disabled={isSaving || isDisconnecting}
+                            className="bg-slate-900/80 border-slate-700 h-9"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="cf-secret" className="text-xs text-slate-400">API Secret</Label>
+                          <Input
+                            id="cf-secret"
+                            type="password"
+                            placeholder="Codeforces API Secret"
+                            value={data.cfSecret || ''}
+                            onChange={(e) => updateHandle(platform.id, 'cfSecret', e.target.value)}
+                            disabled={isSaving || isDisconnecting}
+                            className="bg-slate-900/80 border-slate-700 h-9"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </div>
                 
-                <CardFooter className="pt-2">
+                <CardFooter className="pt-2 flex gap-2">
+                  {isConnected && (
+                    <Button
+                      variant="outline"
+                      onClick={() => handleDisconnectPlatform(platform.id)}
+                      disabled={isSaving || isDisconnecting}
+                      className="border-slate-800 hover:bg-destructive/10 hover:text-destructive text-slate-400 shrink-0"
+                    >
+                      {isDisconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      <span className="sr-only sm:not-sr-only sm:ml-1">Disconnect</span>
+                    </Button>
+                  )}
+                  
                   <Button 
                     onClick={() => handleSavePlatform(platform.id)}
-                    disabled={isSaving}
-                    className="w-full text-white transition-all"
+                    disabled={isSaving || isDisconnecting || !data.handle.trim()}
+                    className="flex-1 text-white transition-all shadow-md"
                     style={{ backgroundColor: platform.color }}
                   >
-                    {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                    {isSaving ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
                     Save {platform.name}
                   </Button>
                 </CardFooter>

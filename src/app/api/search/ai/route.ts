@@ -18,19 +18,23 @@ export async function POST(req: NextRequest) {
 
     let apiKey = SYSTEM_GEMINI_API_KEY;
 
-    // Try to get user's API key if userId is provided
+    // Try to get user's encrypted API key if userId is provided or from session
     if (userId) {
-      const supabase = await createClient();
-      // Assume a table 'user_settings' with 'gemini_api_key'
-      const { data } = await supabase
-        .from('user_settings')
-        .select('gemini_api_key')
-        .eq('user_id', userId)
-        .single();
-        
-      if (data?.gemini_api_key) {
-        // In a real app, you would decrypt this key
-        apiKey = data.gemini_api_key;
+      try {
+        const supabase = await createClient();
+        const { data: keyRow } = await supabase
+          .from('user_api_keys')
+          .select('encrypted_key, iv, auth_tag')
+          .eq('user_id', userId)
+          .eq('provider', 'gemini')
+          .maybeSingle();
+          
+        if (keyRow?.encrypted_key && keyRow?.iv && keyRow?.auth_tag) {
+          const { decryptApiKey } = await import('@/lib/crypto');
+          apiKey = await decryptApiKey(keyRow.encrypted_key, keyRow.iv, keyRow.auth_tag);
+        }
+      } catch (keyErr) {
+        console.warn('Could not load user Gemini key, falling back to system key:', keyErr);
       }
     }
 
