@@ -1,11 +1,42 @@
 import { Problem, UserSolvedProblem } from '../types';
 import { normalizeDifficulty, normalizeTags } from './normalize';
 
-const LC_API_BASE = 'https://leetcode.com/graphql';
+const LEETCODE_API = "https://leetcode.com/graphql";
+const LC_API_BASE = LEETCODE_API;
 const HEADERS = {
   'User-Agent': 'OneDSA-Bot/1.0',
   'Content-Type': 'application/json',
 };
+
+export async function fetchLeetCodeSolved(username: string) {
+  const query = `
+    query getUser($username: String!) {
+      matchedUser(username: $username) {
+        submitStatsGlobal {
+          acSubmissionNum {
+            difficulty
+            count
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await fetch(LEETCODE_API, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query,
+      variables: { username },
+    }),
+  });
+
+  const data = await response.json();
+  return data;
+}
+
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 10000): Promise<Response> {
   const controller = new AbortController();
