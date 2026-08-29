@@ -10,14 +10,29 @@ const HEADERS = {
 
 export async function fetchLeetCodeSolved(username: string) {
   const query = `
-    query getUser($username: String!) {
+    query getUserProblems($username: String!) {
       matchedUser(username: $username) {
-        submitStatsGlobal {
+        submitStats: submitStatsGlobal {
           acSubmissionNum {
             difficulty
             count
           }
         }
+
+        languageProblemCount {
+          languageName
+          problemsSolved
+        }
+
+        profile {
+          ranking
+        }
+      }
+
+      recentSubmissionList(username: $username) {
+        title
+        titleSlug
+        statusDisplay
       }
     }
   `;
@@ -33,8 +48,7 @@ export async function fetchLeetCodeSolved(username: string) {
     }),
   });
 
-  const data = await response.json();
-  return data;
+  return await response.json();
 }
 
 
