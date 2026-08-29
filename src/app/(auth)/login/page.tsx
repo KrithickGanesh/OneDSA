@@ -1,60 +1,118 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Sparkles, Mail, Lock, Loader2 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Sparkles, Mail, Lock, Loader2, Eye, EyeOff, AlertCircle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default function LoginPage() {
+function LoginContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<'google' | 'github' | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  const nextParam = searchParams.get("next");
+  const destination = (nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//'))
+    ? nextParam
+    : "/dashboard";
+
+  useEffect(() => {
+    const error = searchParams.get("error");
+    const message = searchParams.get("message");
+    
+    if (error) {
+      setErrorMessage(decodeURIComponent(error));
+      toast.error(decodeURIComponent(error));
+    }
+    if (message) {
+      setInfoMessage(decodeURIComponent(message));
+    }
+  }, [searchParams]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
+    setErrorMessage(null);
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password) {
       toast.error("Please enter both email and password");
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      toast.error("Please enter a valid email address");
       return;
     }
 
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        if (error.message.toLowerCase().includes("invalid login credentials")) {
+          throw new Error("Invalid email or password. Please check your credentials.");
+        } else if (error.message.toLowerCase().includes("email not confirmed")) {
+          throw new Error("Your email address is not verified yet. Please check your inbox for the confirmation link.");
+        }
+        throw error;
+      }
 
-      toast.success("Successfully logged in");
-      router.push("/dashboard");
+      if (data.user) {
+        toast.success("Successfully logged in");
+        router.push(destination);
+        router.refresh();
+      }
     } catch (error: any) {
-      toast.error(error.message || "Failed to log in");
+      const message = error.message || "Failed to log in. Please try again.";
+      setErrorMessage(message);
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleOAuthLogin = async (provider: 'google' | 'github') => {
+    setErrorMessage(null);
+    setOauthLoading(provider);
     try {
+      const callbackUrl = new URL('/auth/callback', window.location.origin);
+      if (destination && destination !== '/dashboard') {
+        callbackUrl.searchParams.set('next', destination);
+      }
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: callbackUrl.toString(),
         },
       });
+
       if (error) throw error;
     } catch (error: any) {
-      toast.error(`Failed to log in with ${provider}`);
+      const msg = `Failed to sign in with ${provider === 'google' ? 'Google' : 'GitHub'}`;
+      setErrorMessage(error.message || msg);
+      toast.error(msg);
+      setOauthLoading(null);
     }
   };
+
+  const isBusy = isLoading || oauthLoading !== null;
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-background p-4 animate-fade-in">
@@ -66,9 +124,9 @@ export default function LoginPage() {
 
       <div className="w-full max-w-md z-10 animate-slide-up">
         <div className="flex flex-col items-center mb-8">
-          <div className="bg-white/5 p-3 rounded-2xl glow-border mb-4">
+          <Link href="/" className="bg-white/5 p-3 rounded-2xl glow-border mb-4 transition-transform hover:scale-105">
             <Sparkles className="w-8 h-8 text-primary" />
-          </div>
+          </Link>
           <h1 className="text-3xl font-bold tracking-tight">Welcome back</h1>
           <p className="text-muted-foreground mt-2 text-center">
             Sign in to continue to <span className="gradient-text font-semibold">OneDSA</span>
@@ -76,6 +134,20 @@ export default function LoginPage() {
         </div>
 
         <div className="glass-card p-8 rounded-2xl relative">
+          {errorMessage && (
+            <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm flex items-start gap-2 animate-fade-in">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <div className="flex-1 text-left">{errorMessage}</div>
+            </div>
+          )}
+
+          {infoMessage && (
+            <div className="mb-4 p-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm flex items-start gap-2 animate-fade-in">
+              <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+              <div className="flex-1 text-left">{infoMessage}</div>
+            </div>
+          )}
+
           <form onSubmit={handleEmailLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -88,7 +160,11 @@ export default function LoginPage() {
                   className="pl-10 bg-black/20 border-white/10 focus:border-primary/50 transition-colors"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  disabled={isLoading}
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  spellCheck="false"
+                  disabled={isBusy}
+                  required
                 />
               </div>
             </div>
@@ -96,7 +172,11 @@ export default function LoginPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
-                <Link href="/forgot-password" className="text-xs text-primary hover:underline">
+                <Link 
+                  href="/forgot-password" 
+                  className="text-xs text-primary hover:underline transition-all"
+                  tabIndex={isBusy ? -1 : 0}
+                >
                   Forgot password?
                 </Link>
               </div>
@@ -104,19 +184,31 @@ export default function LoginPage() {
                 <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="password"
-                  type="password"
-                  className="pl-10 bg-black/20 border-white/10 focus:border-primary/50 transition-colors"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  className="pl-10 pr-10 bg-black/20 border-white/10 focus:border-primary/50 transition-colors"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  disabled={isLoading}
+                  autoComplete="current-password"
+                  disabled={isBusy}
+                  required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
             <Button 
               type="submit" 
               className="w-full bg-gradient-to-r from-[#7c3aed] to-[#3b82f6] hover:opacity-90 transition-all border-0 shadow-lg group mt-2" 
-              disabled={isLoading}
+              disabled={isBusy}
             >
               {isLoading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -140,38 +232,50 @@ export default function LoginPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <Button 
+              type="button"
               variant="outline" 
               onClick={() => handleOAuthLogin('google')}
-              disabled={isLoading}
-              className="bg-white/5 border-white/10 hover:bg-white/10 transition-colors"
+              disabled={isBusy}
+              className="bg-white/5 border-white/10 hover:bg-white/10 transition-colors relative"
             >
-              <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
+              {oauthLoading === 'google' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
+                  <path
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    fill="#4285F4"
+                  />
+                  <path
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    fill="#34A853"
+                  />
+                  <path
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                    fill="#FBBC05"
+                  />
+                  <path
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                    fill="#EA4335"
+                  />
+                </svg>
+              )}
               Google
             </Button>
             <Button 
+              type="button"
               variant="outline" 
               onClick={() => handleOAuthLogin('github')}
-              disabled={isLoading}
-              className="bg-white/5 border-white/10 hover:bg-white/10 transition-colors"
+              disabled={isBusy}
+              className="bg-white/5 border-white/10 hover:bg-white/10 transition-colors relative"
             >
-              <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+              {oauthLoading === 'github' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+              )}
               GitHub
             </Button>
           </div>
@@ -179,11 +283,22 @@ export default function LoginPage() {
 
         <p className="mt-8 text-center text-sm text-muted-foreground">
           Don't have an account?{" "}
-          <Link href="/signup" className="font-semibold text-primary hover:underline transition-all">
+          <Link 
+            href={nextParam ? `/signup?next=${encodeURIComponent(nextParam)}` : "/signup"} 
+            className="font-semibold text-primary hover:underline transition-all"
+          >
             Sign up
           </Link>
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>}>
+      <LoginContent />
+    </Suspense>
   );
 }

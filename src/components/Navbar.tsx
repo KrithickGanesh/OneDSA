@@ -138,11 +138,9 @@ export default function Navbar() {
 
           {/* Mobile Menu */}
           <Sheet>
-            <SheetTrigger>
-              <Button variant="ghost" size="icon" className="md:hidden">
-                <Menu className="h-5 w-5" />
-                <span className="sr-only">Toggle menu</span>
-              </Button>
+            <SheetTrigger className={buttonVariants({ variant: "ghost", size: "icon", className: "md:hidden" })}>
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Toggle menu</span>
             </SheetTrigger>
             <SheetContent side="right" className="glass-card w-[300px] sm:w-[400px]">
               <nav className="flex flex-col gap-4 mt-8">
