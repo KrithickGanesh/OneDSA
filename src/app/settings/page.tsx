@@ -79,6 +79,11 @@ export default function SettingsPage() {
   const [isTestingGemini, setIsTestingGemini] = useState(false);
   const [isDeletingGemini, setIsDeletingGemini] = useState(false);
 
+  // Bulk import state
+  const [importPlatform, setImportPlatform] = useState('leetcode');
+  const [importText, setImportText] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+
   useEffect(() => {
     async function loadSettings() {
       try {
@@ -255,6 +260,37 @@ export default function SettingsPage() {
         [field]: value
       }
     }));
+  };
+
+  const handleImportSolved = async () => {
+    if (!importText.trim()) {
+      toast.error('Please enter problem slugs or URLs to import');
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const res = await fetch('/api/sync/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform: importPlatform,
+          data: importText,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Successfully imported and marked ${data.markedSolved} problems as solved!`);
+        setImportText('');
+      } else {
+        toast.error(data.error || 'Failed to import problems');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Network error during import');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   if (isLoading) {
@@ -526,6 +562,66 @@ export default function SettingsPage() {
             );
           })}
         </div>
+      </section>
+
+      {/* Bulk Solved Problem Importer */}
+      <section className="space-y-4 pt-4 border-t border-slate-800">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-white flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-cyan-400" />
+            Bulk Solved Problem Importer
+          </h2>
+          <p className="text-sm text-slate-400">
+            Paste your solved problem slugs or URLs to instantly mark all 400+ problems as solved. OneDSA will guarantee these are excluded from your unsolved problem queues.
+          </p>
+        </div>
+
+        <Card className="bg-slate-950/40 border-slate-800 backdrop-blur-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-medium">Quick Slugs / URLs Import</CardTitle>
+            <CardDescription className="text-xs">
+              Supports comma-separated or newline-separated problem slugs (e.g. <code className="text-cyan-400">two-sum, 3sum, course-schedule</code>) or full problem URLs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              {PLATFORMS.map((p) => (
+                <Button
+                  key={p.id}
+                  type="button"
+                  variant={importPlatform === p.id ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setImportPlatform(p.id)}
+                  className={`text-xs ${importPlatform === p.id ? "bg-cyan-600 hover:bg-cyan-500 text-white" : "border-slate-800 text-slate-400"}`}
+                >
+                  {p.name}
+                </Button>
+              ))}
+            </div>
+
+            <textarea
+              rows={4}
+              placeholder="Paste problem slugs or URLs here (e.g., two-sum, course-schedule, number-of-islands, ...)"
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              disabled={isImporting}
+              className="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+            />
+          </CardContent>
+          <CardFooter className="flex justify-between items-center pt-0">
+            <span className="text-xs text-slate-500">
+              {importText.trim() ? `${importText.split(/[\n,;\s]+/).filter(Boolean).length} items detected` : 'No items entered'}
+            </span>
+            <Button
+              onClick={handleImportSolved}
+              disabled={isImporting || !importText.trim()}
+              className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white"
+            >
+              {isImporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              Import & Mark Solved
+            </Button>
+          </CardFooter>
+        </Card>
       </section>
     </div>
   );

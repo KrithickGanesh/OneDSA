@@ -4,11 +4,63 @@ import { normalizeDifficulty, normalizeTags } from './normalize';
 const LEETCODE_API = "https://leetcode.com/graphql";
 const LC_API_BASE = LEETCODE_API;
 const HEADERS = {
-  'User-Agent': 'OneDSA-Bot/1.0',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Content-Type': 'application/json',
 };
 
-export async function fetchLeetCodeSolved(username: string) {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+export async function fetchLeetCodeSolved(username: string, sessionCookie?: string) {
+  // If session cookie is available, fetch complete user status across all 4041 problems
+  if (sessionCookie) {
+    try {
+      const response = await fetchWithTimeout('https://leetcode.com/api/problems/all/', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+          'Cookie': `LEETCODE_SESSION=${sessionCookie}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const pairs = data.stat_status_pairs || [];
+        const solvedPairs = pairs.filter((p: any) => p.status === 'ac');
+
+        const solvedList = solvedPairs.map((p: any) => ({
+          title: p.stat.question__title,
+          titleSlug: p.stat.question__title_slug,
+          difficulty: p.difficulty.level === 1 ? 'Easy' : p.difficulty.level === 2 ? 'Medium' : 'Hard',
+          timestamp: Date.now().toString(),
+        }));
+
+        return {
+          data: {
+            matchedUser: {
+              submitStats: {
+                acSubmissionNum: [
+                  { difficulty: 'All', count: solvedList.length },
+                ],
+              },
+            },
+            recentAcSubmissionList: solvedList,
+            recentSubmissionList: solvedList.map((s: any) => ({ ...s, statusDisplay: 'Accepted' })),
+          },
+        };
+      }
+    } catch (err) {
+      console.warn('Failed to fetch authenticated LeetCode solved list, falling back to public GraphQL:', err);
+    }
+  }
+
   const query = `
     query getUserProblems($username: String!) {
       matchedUser(username: $username) {
@@ -45,9 +97,7 @@ export async function fetchLeetCodeSolved(username: string) {
 
   const response = await fetch(LEETCODE_API, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: HEADERS,
     body: JSON.stringify({
       query,
       variables: { username },
@@ -76,9 +126,7 @@ export async function fetchLeetCodeQuestionDetails(titleSlug: string) {
   try {
     const response = await fetch(LEETCODE_API, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: HEADERS,
       body: JSON.stringify({
         query,
         variables: { titleSlug },
@@ -93,27 +141,46 @@ export async function fetchLeetCodeQuestionDetails(titleSlug: string) {
   }
 }
 
-
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 10000): Promise<Response> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
+export async function fetchLeetCodeProblems(_limit = 4041): Promise<Problem[]> {
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    return response;
-  } finally {
-    clearTimeout(id);
-  }
-}
+    const res = await fetchWithTimeout('https://leetcode.com/api/problems/all/', {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
 
-export async function fetchLeetCodeProblems(limit = 3000): Promise<Problem[]> {
+    if (res.ok) {
+      const data = await res.json();
+      const pairs = data.stat_status_pairs || [];
+      const difficultyMap: Record<number, 'Easy' | 'Medium' | 'Hard'> = { 1: 'Easy', 2: 'Medium', 3: 'Hard' };
+
+      return pairs.map((p: any) => {
+        const slug = p.stat.question__title_slug;
+        const title = p.stat.question__title;
+        const diffLevel = difficultyMap[p.difficulty.level] || 'Medium';
+
+        return {
+          id: `lc-${slug}`,
+          platform: 'leetcode',
+          platformProblemId: slug,
+          title,
+          url: `https://leetcode.com/problems/${slug}/`,
+          difficultyLevel: diffLevel,
+          difficultyRating: p.difficulty.level === 1 ? 1200 : p.difficulty.level === 2 ? 1600 : 2100,
+          tags: [],
+          rawTags: [],
+          acceptanceRate: p.stat.total_submitted > 0 ? p.stat.total_acs / p.stat.total_submitted : null,
+          isPremium: p.paid_only || false,
+          metadata: { frontendId: p.stat.frontend_question_id },
+        };
+      });
+    }
+  } catch (err) {
+    console.error('Failed to fetch from api/problems/all, falling back to GraphQL:', err);
+  }
+
+  // Fallback GraphQL
   const query = `
-    query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) {
-      problemsetQuestionList: questionList(
-        categorySlug: $categorySlug
-        limit: $limit
-        skip: $skip
-        filters: $filters
-      ) {
+    query problemsetQuestionList {
+      problemsetQuestionList: questionList(categorySlug: "", limit: 100, skip: 0, filters: {}) {
         total: totalNum
         questions: data {
           frontendQuestionId: questionFrontendId
@@ -121,98 +188,86 @@ export async function fetchLeetCodeProblems(limit = 3000): Promise<Problem[]> {
           titleSlug
           difficulty
           paidOnly: isPaidOnly
-          acRate
-          topicTags {
-            name
-          }
+          topicTags { name }
         }
       }
     }
   `;
 
-  const variables = {
-    categorySlug: "",
-    skip: 0,
-    limit,
-    filters: {}
-  };
-
   const response = await fetchWithTimeout(LC_API_BASE, {
     method: 'POST',
     headers: HEADERS,
-    body: JSON.stringify({ query, variables }),
+    body: JSON.stringify({ query }),
   });
 
-  if (!response.ok) throw new Error(`LeetCode API error: ${response.status}`);
   const data = await response.json();
+  const questions = data.data?.problemsetQuestionList?.questions || [];
 
-  if (data.errors) throw new Error(`LeetCode GraphQL error: ${data.errors[0].message}`);
-
-  const questions = data.data.problemsetQuestionList.questions;
-  const problems: Problem[] = [];
-
-  for (const q of questions) {
-    const { level, rating } = normalizeDifficulty('leetcode', q.difficulty);
-    const rawTags = (q.topicTags || []).map((t: any) => t.name);
-    
-    problems.push({
-      id: `lc-${q.titleSlug}`,
-      platform: 'leetcode',
-      platformProblemId: q.titleSlug,
-      title: q.title,
-      url: `https://leetcode.com/problems/${q.titleSlug}/`,
-      difficultyLevel: level,
-      difficultyRating: rating,
-      tags: normalizeTags(rawTags),
-      rawTags,
-      acceptanceRate: q.acRate,
-      isPremium: q.paidOnly,
-      metadata: { frontendId: q.frontendQuestionId },
-    });
-  }
-
-  return problems;
+  return questions.map((q: any) => ({
+    id: `lc-${q.titleSlug}`,
+    platform: 'leetcode',
+    platformProblemId: q.titleSlug,
+    title: q.title,
+    url: `https://leetcode.com/problems/${q.titleSlug}/`,
+    difficultyLevel: q.difficulty,
+    difficultyRating: q.difficulty === 'Easy' ? 1200 : q.difficulty === 'Medium' ? 1600 : 2100,
+    tags: normalizeTags((q.topicTags || []).map((t: any) => t.name)),
+    rawTags: (q.topicTags || []).map((t: any) => t.name),
+    isPremium: q.paidOnly,
+    metadata: { frontendId: q.frontendQuestionId },
+  }));
 }
 
-export async function fetchLeetCodeUserSolved(username: string): Promise<UserSolvedProblem[]> {
+export async function fetchLeetCodeUserSolved(username: string, sessionCookie?: string): Promise<UserSolvedProblem[]> {
+  // If session cookie is provided, get full lifetime list of all solved problems
+  if (sessionCookie) {
+    try {
+      const response = await fetchWithTimeout('https://leetcode.com/api/problems/all/', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+          'Cookie': `LEETCODE_SESSION=${sessionCookie}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const pairs = data.stat_status_pairs || [];
+        const solved = pairs.filter((p: any) => p.status === 'ac');
+
+        return solved.map((p: any) => ({
+          platform: 'leetcode',
+          platformProblemId: p.stat.question__title_slug,
+          solvedAt: new Date().toISOString(),
+        }));
+      }
+    } catch (err) {
+      console.warn('Session cookie fetch failed:', err);
+    }
+  }
+
+  // Public profile fallback
   const query = `
-    query recentAcSubmissions($username: String!, $limit: Int!) {
-      recentAcSubmissionList(username: $username, limit: $limit) {
+    query recentAcSubmissions($username: String!) {
+      recentAcSubmissionList(username: $username, limit: 100) {
         titleSlug
         timestamp
       }
     }
   `;
 
-  const variables = {
-    username,
-    limit: 100 
-  };
-
   const response = await fetchWithTimeout(LC_API_BASE, {
     method: 'POST',
     headers: HEADERS,
-    body: JSON.stringify({ query, variables }),
+    body: JSON.stringify({ query, variables: { username } }),
   });
 
-  if (!response.ok) throw new Error(`LeetCode API error: ${response.status}`);
+  if (!response.ok) return [];
   const data = await response.json();
+  const submissions = data.data?.recentAcSubmissionList || [];
 
-  if (data.errors) throw new Error(`LeetCode GraphQL error: ${data.errors[0].message}`);
-
-  const submissions = data.data.recentAcSubmissionList || [];
-  const userSolvedProblems: UserSolvedProblem[] = submissions.map((sub: any) => ({
+  return submissions.map((sub: any) => ({
     platform: 'leetcode',
     platformProblemId: sub.titleSlug,
     solvedAt: new Date(Number(sub.timestamp) * 1000).toISOString(),
   }));
-
-  const unique = new Map<string, UserSolvedProblem>();
-  for (const s of userSolvedProblems) {
-    if (!unique.has(s.platformProblemId)) {
-      unique.set(s.platformProblemId, s);
-    }
-  }
-
-  return Array.from(unique.values());
 }

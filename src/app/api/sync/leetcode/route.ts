@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchLeetCodeSolved, fetchLeetCodeQuestionDetails } from "@/lib/sync/leetcode";
 import { createClient } from "@/lib/supabase/server";
+import { decryptApiKey } from "@/lib/crypto";
 
 export async function POST(req: Request) {
   try {
@@ -19,10 +20,12 @@ export async function POST(req: Request) {
     }
 
     let username: string | undefined;
+    let sessionCookie: string | undefined;
 
     try {
       const body = await req.json();
       username = body?.username;
+      sessionCookie = body?.sessionCookie || body?.leetcodeSession;
     } catch {
       // Body might be empty, will fallback to database handle
     }
@@ -39,6 +42,24 @@ export async function POST(req: Request) {
       username = handleRow?.handle;
     }
 
+    // Lookup encrypted LEETCODE_SESSION if saved in user_api_keys
+    if (!sessionCookie) {
+      try {
+        const { data: sessionKeyRow } = await supabase
+          .from('user_api_keys')
+          .select('encrypted_key, iv, auth_tag')
+          .eq('user_id', user.id)
+          .eq('provider', 'leetcode_session')
+          .maybeSingle();
+
+        if (sessionKeyRow?.encrypted_key && sessionKeyRow?.iv && sessionKeyRow?.auth_tag) {
+          sessionCookie = await decryptApiKey(sessionKeyRow.encrypted_key, sessionKeyRow.iv, sessionKeyRow.auth_tag);
+        }
+      } catch (err) {
+        console.warn('Failed to decrypt leetcode_session:', err);
+      }
+    }
+
     if (!username) {
       return NextResponse.json(
         { success: false, message: "No LeetCode username provided or configured in settings" },
@@ -46,8 +67,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Fetch LeetCode submissions & stats
-    const leetCodeData = await fetchLeetCodeSolved(username);
+    // 3. Fetch LeetCode submissions & stats (supporting full lifetime sync if session cookie exists)
+    const leetCodeData = await fetchLeetCodeSolved(username, sessionCookie);
 
     const acList: Array<{ title: string; titleSlug: string; timestamp?: string }> = 
       leetCodeData?.data?.recentAcSubmissionList || [];
