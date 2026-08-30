@@ -1,85 +1,64 @@
-import { GoogleGenAI, Type, Schema } from '@google/genai';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-export function createGeminiClient(apiKey: string) {
-  return new GoogleGenAI({ apiKey });
-}
-
-export interface ParsedSearchFilter {
+export interface ParsedPromptResult {
+  topic: string | null;
+  difficulty: "Easy" | "Medium" | "Hard" | null;
   platforms: string[];
-  topics: string[];
-  difficulty_level: string;
-  difficulty_min: number | null;
-  difficulty_max: number | null;
-  limit: number | null;
-  exclude_solved: boolean;
-  sort_by: string;
+  unsolved: boolean;
+  limit: number;
+  similarTo: string | null;
 }
 
-const FILTER_SCHEMA: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    platforms: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "List of platforms requested, e.g., 'codeforces', 'leetcode', 'codechef'"
-    },
-    topics: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "List of requested topics or canonical tags like 'Array', 'Dynamic Programming', 'Math'"
-    },
-    difficulty_level: {
-      type: Type.STRING,
-      description: "General difficulty level requested: 'Easy', 'Medium', or 'Hard'"
-    },
-    difficulty_min: {
-      type: Type.INTEGER,
-      description: "Minimum difficulty rating if specified"
-    },
-    difficulty_max: {
-      type: Type.INTEGER,
-      description: "Maximum difficulty rating if specified"
-    },
-    limit: {
-      type: Type.INTEGER,
-      description: "Maximum number of problems to return"
-    },
-    exclude_solved: {
-      type: Type.BOOLEAN,
-      description: "Whether the user wants to exclude problems they have already solved"
-    },
-    sort_by: {
-      type: Type.STRING,
-      description: "Field to sort by, e.g., 'difficulty', 'date', 'popularity'"
-    }
-  },
-  required: ["platforms", "topics", "difficulty_level", "exclude_solved", "sort_by"]
-};
+export async function parsePrompt(prompt: string, customApiKey?: string): Promise<ParsedPromptResult> {
+  const apiKey = customApiKey || process.env.SYSTEM_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "";
+  
+  if (!apiKey) {
+    throw new Error("Gemini API key is not configured. Please set SYSTEM_GEMINI_API_KEY in .env.local or provide a custom key in settings.");
+  }
 
-const SYSTEM_PROMPT = `You are an AI assistant for a competitive programming problem aggregator (OneDSA). 
-Your task is to parse natural language search queries and extract structured filter parameters.
-Map topics to standard tags like 'Array', 'Hash Table', 'Math', 'Dynamic Programming', 'Graph', 'String', 'Sorting', 'Greedy', 'Binary Search', 'Tree', 'Depth-First Search', 'Breadth-First Search', 'Two Pointers', 'Bit Manipulation', 'Stack', etc.
-Map platforms to canonical IDs: 'codeforces', 'leetcode', 'codechef', 'hackerrank', 'gfg'.
-Identify difficulty levels (Easy, Medium, Hard) or specific numerical rating ranges (e.g., Codeforces 1200-1500).
-Identify intent to exclude solved problems (e.g., "new problems", "unsolved", "that I haven't done").
-Identify limits (e.g., "give me 5 problems" -> limit: 5).`;
+  const genAI = new GoogleGenerativeAI(apiKey);
 
-export async function parseSearchQuery(client: GoogleGenAI, query: string): Promise<ParsedSearchFilter> {
-  const response = await client.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: query,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      responseMimeType: 'application/json',
-      responseSchema: FILTER_SCHEMA,
-      temperature: 0.1
-    }
+  const model = genAI.getGenerativeModel({
+    model: "gemini-3.6-flash",
+    generationConfig: {
+      responseMimeType: "application/json",
+    },
   });
 
-  const text = response.text;
-  if (!text) {
-    throw new Error('Failed to parse search query');
-  }
+  const systemPrompt = `
+You are an AI parser for a DSA platform called OneDSA.
+
+Convert the user's request into structured JSON filters.
+
+Return ONLY valid JSON.
+
+Schema:
+{
+  "topic": string | null,
+  "difficulty": "Easy" | "Medium" | "Hard" | null,
+  "platforms": string[],
+  "unsolved": boolean,
+  "limit": number,
+  "similarTo": string | null
+}
+
+Rules:
+- Map topics to standard DSA categories like "Tree", "Array", "Dynamic Programming", "Graph", "String", "Binary Search", "Hash Table", "Two Pointers", "Stack", "Queue", "Math", "Greedy", etc.
+- Map platform names to lowercase strings: ["leetcode", "codeforces", "codechef", "hackerrank", "gfg"]. If no specific platform is mentioned, include ["leetcode", "codeforces", "codechef", "hackerrank", "gfg"].
+- If the user asks for unsolved, new, or problems they haven't done, set unsolved to true.
+- Default limit to 5 if not specified.
+- If the user asks for problems similar to a specific problem (e.g. "Similar to Two Sum"), set similarTo to that problem title/slug.
+`;
+
+  const result = await model.generateContent([
+    systemPrompt,
+    prompt,
+  ]);
+
+  let text = result.response.text();
   
-  return JSON.parse(text) as ParsedSearchFilter;
+  // Clean markdown fences if present
+  text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+  return JSON.parse(text) as ParsedPromptResult;
 }

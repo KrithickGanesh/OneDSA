@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createGeminiClient, parseSearchQuery, ParsedSearchFilter } from '@/lib/gemini';
+import { parsePrompt } from '@/lib/gemini';
 import { syncAllProblems, syncUserSolvedProblems } from '@/lib/sync';
 import { createClient } from '@/lib/supabase/server';
 import { Problem } from '@/lib/types';
@@ -42,13 +42,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Gemini API key is not configured' }, { status: 500 });
     }
 
-    const geminiClient = createGeminiClient(apiKey);
-    const filters: ParsedSearchFilter = await parseSearchQuery(geminiClient, query);
+    const parsedFilter = await parsePrompt(query, apiKey);
     
-    // Override exclude_solved if explicitly passed in body
-    if (excludeSolved !== undefined) {
-      filters.exclude_solved = excludeSolved;
-    }
+    // Map to route filter structure
+    const filters = {
+      platforms: parsedFilter.platforms,
+      topics: parsedFilter.topic ? [parsedFilter.topic] : [],
+      difficulty_level: parsedFilter.difficulty || 'All',
+      difficulty_min: null as number | null,
+      difficulty_max: null as number | null,
+      limit: parsedFilter.limit || 20,
+      exclude_solved: excludeSolved !== undefined ? excludeSolved : parsedFilter.unsolved,
+      sort_by: 'difficulty'
+    };
 
     // Fetch problems from platforms
     // Note: In a production app, we would query a database here instead of syncing live
