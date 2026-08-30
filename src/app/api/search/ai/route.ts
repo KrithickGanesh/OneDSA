@@ -10,7 +10,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const userPrompt = body.prompt || body.query;
-    const explicitUserId = body.userId;
 
     if (!userPrompt || typeof userPrompt !== 'string' || !userPrompt.trim()) {
       return NextResponse.json(
@@ -21,30 +20,35 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient();
 
-    // 1. Authenticate user & resolve API Key
+    // 1. Authenticate user (strict auth check to prevent ID spoofing)
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    const currentUserId = user?.id || explicitUserId;
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized. Please sign in to use AI Search.' },
+        { status: 401 }
+      );
+    }
+
+    const currentUserId = user.id;
     let apiKey = SYSTEM_GEMINI_API_KEY;
 
     // Check if user has a custom encrypted Gemini key in user_api_keys
-    if (currentUserId) {
-      try {
-        const { data: keyRow } = await supabase
-          .from('user_api_keys')
-          .select('encrypted_key, iv, auth_tag')
-          .eq('user_id', currentUserId)
-          .eq('provider', 'gemini')
-          .maybeSingle();
+    try {
+      const { data: keyRow } = await supabase
+        .from('user_api_keys')
+        .select('encrypted_key, iv, auth_tag')
+        .eq('user_id', currentUserId)
+        .eq('provider', 'gemini')
+        .maybeSingle();
 
-        if (keyRow?.encrypted_key && keyRow?.iv && keyRow?.auth_tag) {
-          apiKey = await decryptApiKey(keyRow.encrypted_key, keyRow.iv, keyRow.auth_tag);
-        }
-      } catch (err) {
-        console.warn('Failed to load user Gemini API key, falling back to system key:', err);
+      if (keyRow?.encrypted_key && keyRow?.iv && keyRow?.auth_tag) {
+        apiKey = await decryptApiKey(keyRow.encrypted_key, keyRow.iv, keyRow.auth_tag);
       }
+    } catch (err) {
+      console.warn('Failed to load user Gemini API key, falling back to system key:', err);
     }
 
     if (!apiKey) {
@@ -57,10 +61,10 @@ export async function POST(req: NextRequest) {
     // 2. Step 7B.1 — Parse prompt with Gemini
     const filters: ParsedPromptResult = await parsePrompt(userPrompt, apiKey);
 
-    // 3. Step 7B.3 — Unsolved Problem Exclusion Logic
+    // 3. Step 7B.3 — Unsolved Problem Exclusion Logic (Single Batch Query)
     let solvedProblemIds: string[] = [];
 
-    if (filters.unsolved && currentUserId) {
+    if (filters.unsolved) {
       const { data: solvedRows } = await supabase
         .from('user_problem_status')
         .select('problem_id')
@@ -75,7 +79,9 @@ export async function POST(req: NextRequest) {
     // 4. Step 7B.2 — Build Dynamic Supabase Query
     let queryBuilder = supabase.from('problems').select('*');
 
-    // Platform Filter
+    // Platform Filter:
+    // If platforms array is provided and not empty, filter by specified platforms.
+    // Empty array = search every platform across OneDSA.
     if (filters.platforms && filters.platforms.length > 0) {
       const canonicalPlatforms = filters.platforms.map((p) => p.toLowerCase().trim());
       queryBuilder = queryBuilder.in('platform', canonicalPlatforms);
@@ -97,10 +103,13 @@ export async function POST(req: NextRequest) {
       queryBuilder = queryBuilder.not('id', 'in', `(${solvedProblemIds.join(',')})`);
     }
 
-    // Limit Filter
+    // Limit & Deterministic Ordering
     const requestedLimit = Number(filters.limit) || 5;
     const limit = Math.min(Math.max(requestedLimit, 1), 50);
-    queryBuilder = queryBuilder.limit(limit);
+    queryBuilder = queryBuilder
+      .order('difficulty', { ascending: true })
+      .order('title', { ascending: true })
+      .limit(limit);
 
     // Execute primary query
     const { data: problems, error: dbError } = await queryBuilder;
@@ -112,28 +121,37 @@ export async function POST(req: NextRequest) {
 
     let results = problems || [];
 
-    // Fallback: If tag matching produced 0 rows (e.g. topic is phrasing like "graphs"), try a looser topic fallback
+    // Fallback: If tag matching produced 0 rows (e.g. topic phrasing like "graphs"), try a sanitized topic fallback
     if (results.length === 0 && filters.topic) {
-      const topicKeyword = filters.topic.toLowerCase().trim().replace(/s$/, ''); // e.g. "trees" -> "tree"
-      let fallbackQuery = supabase.from('problems').select('*');
+      const topicKeyword = filters.topic
+        .toLowerCase()
+        .replace(/[^a-z0-9- ]/g, '')
+        .trim();
 
-      if (filters.platforms && filters.platforms.length > 0) {
-        fallbackQuery = fallbackQuery.in('platform', filters.platforms.map(p => p.toLowerCase()));
-      }
-      if (filters.difficulty && filters.difficulty.toLowerCase() !== 'all') {
-        fallbackQuery = fallbackQuery.ilike('difficulty', filters.difficulty);
-      }
-      if (filters.unsolved && solvedProblemIds.length > 0) {
-        fallbackQuery = fallbackQuery.not('id', 'in', `(${solvedProblemIds.join(',')})`);
-      }
+      if (topicKeyword) {
+        let fallbackQuery = supabase.from('problems').select('*');
 
-      fallbackQuery = fallbackQuery
-        .or(`title.ilike.%${topicKeyword}%,slug.ilike.%${topicKeyword}%,tags.cs.{"${topicKeyword}"}`)
-        .limit(limit);
+        // Platform filter on fallback
+        if (filters.platforms && filters.platforms.length > 0) {
+          fallbackQuery = fallbackQuery.in('platform', filters.platforms.map(p => p.toLowerCase()));
+        }
+        if (filters.difficulty && filters.difficulty.toLowerCase() !== 'all') {
+          fallbackQuery = fallbackQuery.ilike('difficulty', filters.difficulty);
+        }
+        if (filters.unsolved && solvedProblemIds.length > 0) {
+          fallbackQuery = fallbackQuery.not('id', 'in', `(${solvedProblemIds.join(',')})`);
+        }
 
-      const { data: fallbackProblems } = await fallbackQuery;
-      if (fallbackProblems && fallbackProblems.length > 0) {
-        results = fallbackProblems;
+        fallbackQuery = fallbackQuery
+          .or(`title.ilike.%${topicKeyword}%,slug.ilike.%${topicKeyword}%,tags.cs.{"${topicKeyword}"}`)
+          .order('difficulty', { ascending: true })
+          .order('title', { ascending: true })
+          .limit(limit);
+
+        const { data: fallbackProblems } = await fallbackQuery;
+        if (fallbackProblems && fallbackProblems.length > 0) {
+          results = fallbackProblems;
+        }
       }
     }
 
