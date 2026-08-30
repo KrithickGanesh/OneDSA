@@ -42,16 +42,22 @@ export async function executeSearchQuery(
       .filter((id: any): id is string => Boolean(id));
   }
 
+  const solvedSet = new Set(solvedProblemIds);
+
   // Default to excluding solved problems unless explicitly requested to include them or filter solved only
   const shouldExcludeSolved = (params.unsolved !== false && params.exclude_solved !== false) && !params.solved_only;
   const shouldFilterSolvedOnly = Boolean(params.solved_only);
 
+  const requestedLimit = Number(params.limit) || 20;
+  const limit = Math.min(Math.max(requestedLimit, 1), 100);
+
+  // Fetch larger candidate pool to filter solved items without overflowing HTTP URL header limits (16KB)
+  const candidatePoolSize = shouldExcludeSolved ? Math.max(limit * 4, 100) : limit;
+
   // 2. Build Supabase query on problems table
   let queryBuilder = supabase.from('problems').select('*');
 
-  // Platform Filter:
-  // If platforms array is provided and not empty, filter by specified platforms.
-  // Empty array = search every platform across OneDSA.
+  // Platform Filter
   if (params.platforms && params.platforms.length > 0) {
     const canonicalPlatforms = params.platforms.map((p) => p.toLowerCase().trim());
     queryBuilder = queryBuilder.in('platform', canonicalPlatforms);
@@ -73,24 +79,10 @@ export async function executeSearchQuery(
     .filter(Boolean);
 
   if (normalizedTopics.length > 0) {
-    // PostgREST contains filter on array
     queryBuilder = queryBuilder.contains('tags', [normalizedTopics[0]]);
   }
 
-  // Solved status filtering
-  if (shouldExcludeSolved && solvedProblemIds.length > 0) {
-    queryBuilder = queryBuilder.not('id', 'in', `(${solvedProblemIds.join(',')})`);
-  } else if (shouldFilterSolvedOnly) {
-    if (solvedProblemIds.length === 0) {
-      return { problems: [], total: 0, solvedProblemIds: [] };
-    }
-    queryBuilder = queryBuilder.in('id', solvedProblemIds);
-  }
-
-  // Limit & Deterministic Ordering
-  const requestedLimit = Number(params.limit) || 20;
-  const limit = Math.min(Math.max(requestedLimit, 1), 100);
-
+  // Deterministic Ordering
   if (params.sort_by === 'title') {
     queryBuilder = queryBuilder.order('title', { ascending: true });
   } else {
@@ -99,7 +91,7 @@ export async function executeSearchQuery(
       .order('title', { ascending: true });
   }
 
-  queryBuilder = queryBuilder.limit(limit);
+  queryBuilder = queryBuilder.limit(candidatePoolSize);
 
   // Execute primary query
   const { data: problems, error: dbError } = await queryBuilder;
@@ -110,6 +102,13 @@ export async function executeSearchQuery(
   }
 
   let results = problems || [];
+
+  // Filter solved status safely in-memory using solvedSet (avoids URL header overflow)
+  if (shouldExcludeSolved && solvedSet.size > 0) {
+    results = results.filter((p) => !solvedSet.has(p.id));
+  } else if (shouldFilterSolvedOnly) {
+    results = results.filter((p) => solvedSet.has(p.id));
+  }
 
   // Fallback: If tag matching produced 0 rows (e.g. user entered "trees" or specific concept), try title/slug/tag search
   if (results.length === 0 && normalizedTopics.length > 0) {
@@ -129,27 +128,31 @@ export async function executeSearchQuery(
       if (targetDifficulty && targetDifficulty.toLowerCase() !== 'all') {
         fallbackQuery = fallbackQuery.ilike('difficulty', targetDifficulty.trim());
       }
-      if (shouldExcludeSolved && solvedProblemIds.length > 0) {
-        fallbackQuery = fallbackQuery.not('id', 'in', `(${solvedProblemIds.join(',')})`);
-      } else if (shouldFilterSolvedOnly && solvedProblemIds.length > 0) {
-        fallbackQuery = fallbackQuery.in('id', solvedProblemIds);
-      }
 
       fallbackQuery = fallbackQuery
         .or(`title.ilike.%${topicKeyword}%,slug.ilike.%${topicKeyword}%,tags.cs.{"${topicKeyword}"}`)
         .order('difficulty', { ascending: true })
         .order('title', { ascending: true })
-        .limit(limit);
+        .limit(candidatePoolSize);
 
       const { data: fallbackProblems } = await fallbackQuery;
       if (fallbackProblems && fallbackProblems.length > 0) {
-        results = fallbackProblems;
+        let fbResults = fallbackProblems;
+        if (shouldExcludeSolved && solvedSet.size > 0) {
+          fbResults = fbResults.filter((p) => !solvedSet.has(p.id));
+        } else if (shouldFilterSolvedOnly) {
+          fbResults = fbResults.filter((p) => solvedSet.has(p.id));
+        }
+        results = fbResults;
       }
     }
   }
 
+  // Slice down to the exact requested limit
+  const finalProblems = results.slice(0, limit);
+
   // Format into canonical Problem interface
-  const formattedProblems: Problem[] = results.map((p) => ({
+  const formattedProblems: Problem[] = finalProblems.map((p) => ({
     id: p.id,
     platform: p.platform as any,
     platformProblemId: p.platform_problem_id || p.slug || p.id,

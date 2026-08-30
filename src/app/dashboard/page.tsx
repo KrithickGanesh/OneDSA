@@ -117,11 +117,12 @@ export default function DashboardPage() {
         body: JSON.stringify({ prompt: query, excludeSolved: true }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch AI recommendations');
+      const data = await response.json();
+
+      if (!response.ok || data.success === false) {
+        throw new Error(data.error || 'Failed to fetch AI recommendations');
       }
 
-      const data = await response.json();
       const list = data.results || data.problems || [];
       setSearchResults(list);
       
