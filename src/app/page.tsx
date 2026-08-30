@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Sparkles, Layers, LineChart, ArrowRight } from 'lucide-react';
+import { Sparkles, Layers, LineChart, ArrowRight, Bookmark, Brain, Trophy, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
 import { PLATFORMS } from '@/lib/constants';
@@ -53,10 +53,10 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <main className="relative z-10 flex flex-col items-center justify-center text-center px-4 pt-20 pb-32 max-w-5xl mx-auto mt-10">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-cyan-300 text-sm mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-          <Sparkles className="w-4 h-4" />
-          <span>Introducing AI-Powered Search</span>
+      <main className="relative z-10 flex flex-col items-center justify-center text-center px-4 pt-16 pb-28 max-w-5xl mx-auto mt-6">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-sm mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700 shadow-[0_0_20px_rgba(6,182,212,0.15)]">
+          <Sparkles className="w-4 h-4 text-cyan-400" />
+          <span>OneDSA v1.0 — Unified Competitive Programming Operating System</span>
         </div>
         
         <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 animate-in fade-in slide-in-from-bottom-6 duration-700 delay-100">
@@ -67,62 +67,92 @@ export default function LandingPage() {
         </h1>
         
         <p className="text-lg md:text-xl text-gray-400 max-w-2xl mb-10 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200">
-          Stop jumping between LeetCode, Codeforces, and CodeChef. 
-          Find, filter, and track competitive programming problems using natural language AI across every major platform.
+          Stop jumping between LeetCode, Codeforces, CodeChef, HackerRank, and GFG. 
+          Search with natural language AI, sync your solved history, revise with SM-2 spaced repetition, and compete with friends.
         </p>
         
         <div className="flex flex-col sm:flex-row gap-4 animate-in fade-in slide-in-from-bottom-10 duration-700 delay-300">
           <Link href="/signup" className={buttonVariants({ size: "lg", className: "h-14 px-8 rounded-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-lg shadow-[0_0_30px_rgba(8,145,178,0.5)] transition-all hover:scale-105" })}>
-            Start Practicing Now <ArrowRight className="ml-2 w-5 h-5" />
+            Start Practicing Free <ArrowRight className="ml-2 w-5 h-5" />
           </Link>
-          <a href="https://github.com" target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "outline", size: "lg", className: "h-14 px-8 rounded-full border-white/20 bg-white/5 hover:bg-white/10 text-white font-semibold backdrop-blur-sm transition-all hover:scale-105" })}>
+          <a href="https://github.com/KrithickGanesh/OneDSA" target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "outline", size: "lg", className: "h-14 px-8 rounded-full border-white/20 bg-white/5 hover:bg-white/10 text-white font-semibold backdrop-blur-sm transition-all hover:scale-105" })}>
             <svg className="mr-2 w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg> Star on GitHub
           </a>
         </div>
 
-        {/* Feature Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-32 w-full animate-in fade-in slide-in-from-bottom-12 duration-700 delay-500">
+        {/* 6 Feature Pillars */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-28 w-full animate-in fade-in slide-in-from-bottom-12 duration-700 delay-500">
           
-          {/* Feature 1 */}
-          <div className="bg-white/[0.03] border border-white/5 hover:border-white/20 p-8 rounded-3xl transition-all hover:-translate-y-2 group text-left backdrop-blur-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-3xl group-hover:bg-cyan-500/20 transition-all"></div>
+          {/* Pillar 1: AI Prompt Search */}
+          <div className="bg-white/[0.03] border border-white/5 hover:border-cyan-500/30 p-8 rounded-3xl transition-all hover:-translate-y-2 group text-left backdrop-blur-sm relative overflow-hidden">
             <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center mb-6">
               <Sparkles className="w-6 h-6" />
             </div>
-            <h3 className="text-xl font-bold mb-3">AI-Powered Search</h3>
-            <p className="text-gray-400 leading-relaxed">
-              Use voice or text to ask for exactly what you need. "Find me 5 hard dynamic programming problems from Codeforces" and watch the magic happen.
+            <h3 className="text-xl font-bold mb-3">AI & Voice Search</h3>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Ask Gemini in plain English or speak via microphone: &quot;Give me 5 medium tree problems I haven&apos;t solved&quot; and get instant filtered results.
             </p>
           </div>
 
-          {/* Feature 2 */}
-          <div className="bg-white/[0.03] border border-white/5 hover:border-white/20 p-8 rounded-3xl transition-all hover:-translate-y-2 group text-left backdrop-blur-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all"></div>
+          {/* Pillar 2: 5 Platforms United */}
+          <div className="bg-white/[0.03] border border-white/5 hover:border-purple-500/30 p-8 rounded-3xl transition-all hover:-translate-y-2 group text-left backdrop-blur-sm relative overflow-hidden">
             <div className="w-12 h-12 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center mb-6">
               <Layers className="w-6 h-6" />
             </div>
-            <h3 className="text-xl font-bold mb-3">All Platforms United</h3>
-            <p className="text-gray-400 leading-relaxed mb-4">
-              LeetCode, Codeforces, CodeChef, HackerRank, and GFG. All your problems in one unified interface.
+            <h3 className="text-xl font-bold mb-3">5 Platforms United</h3>
+            <p className="text-gray-400 text-sm leading-relaxed mb-4">
+              LeetCode, Codeforces, CodeChef, HackerRank, and GFG synced in parallel with a single Universal Sync button.
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               {PLATFORMS.map(p => (
-                <div key={p.id} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold" style={{ color: p.color }}>
+                <div key={p.id} className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-xs font-bold" style={{ color: p.color }}>
                   {p.name.charAt(0)}
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Feature 3 */}
-          <div className="bg-white/[0.03] border border-white/5 hover:border-white/20 p-8 rounded-3xl transition-all hover:-translate-y-2 group text-left backdrop-blur-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl group-hover:bg-emerald-500/20 transition-all"></div>
+          {/* Pillar 3: Spaced Repetition Revision */}
+          <div className="bg-white/[0.03] border border-white/5 hover:border-pink-500/30 p-8 rounded-3xl transition-all hover:-translate-y-2 group text-left backdrop-blur-sm relative overflow-hidden">
+            <div className="w-12 h-12 rounded-2xl bg-pink-500/20 text-pink-400 flex items-center justify-center mb-6">
+              <Brain className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold mb-3">Spaced Repetition (SM-2)</h3>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Never forget a pattern again. Problems are automatically scheduled for 1-day, 3-day, and exponential review cycles based on your confidence rating.
+            </p>
+          </div>
+
+          {/* Pillar 4: Custom Collections */}
+          <div className="bg-white/[0.03] border border-white/5 hover:border-blue-500/30 p-8 rounded-3xl transition-all hover:-translate-y-2 group text-left backdrop-blur-sm relative overflow-hidden">
+            <div className="w-12 h-12 rounded-2xl bg-blue-500/20 text-blue-400 flex items-center justify-center mb-6">
+              <Bookmark className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold mb-3">Saved Collections</h3>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Curate problem sheets, company interview prep decks, and favorite question sets with custom notes and colors.
+            </p>
+          </div>
+
+          {/* Pillar 5: Live Analytics */}
+          <div className="bg-white/[0.03] border border-white/5 hover:border-emerald-500/30 p-8 rounded-3xl transition-all hover:-translate-y-2 group text-left backdrop-blur-sm relative overflow-hidden">
             <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-6">
               <LineChart className="w-6 h-6" />
             </div>
-            <h3 className="text-xl font-bold mb-3">Track Your Progress</h3>
-            <p className="text-gray-400 leading-relaxed">
-              Sync your solved problems across all platforms automatically. Watch your stats grow, maintain your streak, and conquer new heights.
+            <h3 className="text-xl font-bold mb-3">Unified Analytics</h3>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Live difficulty distribution charts, topic mastery bars, day streaks, and sync history across all platforms in one dashboard.
+            </p>
+          </div>
+
+          {/* Pillar 6: Friends Leaderboard */}
+          <div className="bg-white/[0.03] border border-white/5 hover:border-yellow-500/30 p-8 rounded-3xl transition-all hover:-translate-y-2 group text-left backdrop-blur-sm relative overflow-hidden">
+            <div className="w-12 h-12 rounded-2xl bg-yellow-500/20 text-yellow-400 flex items-center justify-center mb-6">
+              <Trophy className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold mb-3">Friends & Global Leaderboard</h3>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Compete on global and private friends leaderboards with podium medals, solved count rankings, and streak tracking.
             </p>
           </div>
 
