@@ -49,20 +49,19 @@ export async function POST(req: Request) {
     // Fetch LeetCode data
     const data = await fetchLeetCodeSolved(username);
 
-    // If recent submissions exist, insert/upsert them into Supabase problems table
-    const submissions = data?.data?.recentSubmissionList || [];
-    if (submissions.length > 0) {
-      const problemsToInsert = submissions.map((item: any) => ({
-        platform: 'leetcode',
-        platform_problem_id: item.titleSlug,
-        slug: item.titleSlug,
-        title: item.title,
-        url: `https://leetcode.com/problems/${item.titleSlug}/`,
-      }));
-
+    // Insert only the first recent submission for now
+    const submission = data?.data?.recentSubmissionList?.[0];
+    if (submission) {
       await supabase
-        .from('problems')
-        .upsert(problemsToInsert, { onConflict: 'platform,platform_problem_id' });
+        .from("problems")
+        .upsert({
+          platform: "leetcode",
+          platform_problem_id: submission.titleSlug,
+          title: submission.title,
+          slug: submission.titleSlug,
+          difficulty: "Unknown",
+          url: `https://leetcode.com/problems/${submission.titleSlug}/`,
+        }, { onConflict: "platform,platform_problem_id" });
     }
 
     return NextResponse.json({
