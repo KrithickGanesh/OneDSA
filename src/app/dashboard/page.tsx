@@ -48,11 +48,13 @@ export default function DashboardPage() {
       }
 
       const data = await response.json();
-      setSearchResults(data.problems || []);
+      const list = data.results || data.problems || [];
+      setSearchResults(list);
       
       if (data.filters) {
-        toast.success(`Found ${data.problems?.length || 0} problems`, {
-          description: `Filters applied: ${data.filters.difficulty_level || 'Any'} difficulty, ${data.filters.platforms.join(', ')}`
+        const platformsStr = Array.isArray(data.filters.platforms) ? data.filters.platforms.join(', ') : 'all platforms';
+        toast.success(`Found ${list.length} problems`, {
+          description: `Filters: ${data.filters.difficulty || 'Any'} difficulty${data.filters.topic ? `, ${data.filters.topic}` : ''} on ${platformsStr}`
         });
       }
     } catch (error: any) {

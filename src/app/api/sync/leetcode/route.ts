@@ -98,7 +98,7 @@ export async function POST(req: Request) {
             const details = await fetchLeetCodeQuestionDetails(item.titleSlug);
 
             const difficulty = details?.difficulty || "Medium";
-            const tags = details?.topicTags?.map((t: any) => t.slug || t.name) || [];
+            const tags = details?.topicTags?.map((t: any) => (t.slug || t.name || "").toLowerCase().trim()).filter(Boolean) || [];
             const title = details?.title || item.title;
 
             // Upsert into problems table
