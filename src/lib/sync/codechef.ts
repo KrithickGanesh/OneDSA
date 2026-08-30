@@ -19,7 +19,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout 
 
 export async function fetchCodeChefProblems(): Promise<Problem[]> {
   try {
-    const url = `${CC_API_BASE}?page=0&limit=100&sort_by=difficulty_rating&sort_order=asc&search=&category=all&difficultyLevel=all`;
+    const url = `${CC_API_BASE}?page=0&limit=50&sort_by=difficulty_rating&sort_order=asc`;
     const response = await fetchWithTimeout(url, { headers: HEADERS });
     if (!response.ok) throw new Error(`CodeChef API error: ${response.status}`);
     
