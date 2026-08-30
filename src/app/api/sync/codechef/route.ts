@@ -116,6 +116,19 @@ export async function POST(req: Request) {
       );
     }
 
+    // Record sync history
+    try {
+      await supabase.from("sync_history").insert({
+        user_id: user.id,
+        platform: "codechef",
+        synced_count: syncedProblems.length,
+        status: "completed",
+        synced_at: new Date().toISOString(),
+      });
+    } catch (histErr) {
+      console.warn("Could not record sync_history:", histErr);
+    }
+
     return NextResponse.json({
       success: true,
       syncedCount: syncedProblems.length,
@@ -126,6 +139,21 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error("CodeChef sync error:", error);
+    try {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from("sync_history").insert({
+          user_id: user.id,
+          platform: "codechef",
+          synced_count: 0,
+          status: "failed",
+          error_message: error?.message || "Sync failed",
+          synced_at: new Date().toISOString(),
+        });
+      }
+    } catch {}
+
     return NextResponse.json(
       { success: false, message: error?.message || "Failed to sync CodeChef data" },
       { status: 500 }

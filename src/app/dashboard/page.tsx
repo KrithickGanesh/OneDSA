@@ -145,6 +145,7 @@ export default function DashboardPage() {
   };
 
   // 4. Live Platform Sync Trigger
+  const [syncingPlatform, setSyncingPlatform] = useState<string | null>(null);
   const supportedSyncPlatforms = ['leetcode', 'codeforces', 'codechef', 'hackerrank', 'gfg'];
 
   const handleSyncPlatform = async (platform: string) => {
@@ -154,6 +155,7 @@ export default function DashboardPage() {
     }
 
     setSyncing(true);
+    setSyncingPlatform(platform);
     const platformName = platform.charAt(0).toUpperCase() + platform.slice(1);
     const toastId = toast.loading(`Syncing ${platformName} solved problems...`);
     try {
@@ -168,6 +170,28 @@ export default function DashboardPage() {
       }
     } catch (err: any) {
       toast.error(err.message || 'Sync request failed', { id: toastId });
+    } finally {
+      setSyncing(false);
+      setSyncingPlatform(null);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    setSyncing(true);
+    setSyncingPlatform(null);
+    const toastId = toast.loading('Running Universal Sync across all connected platforms...');
+    try {
+      const res = await fetch('/api/sync/all', { method: 'POST' });
+      const json = await res.json();
+
+      if (json.success) {
+        toast.success(json.message || `Universal sync completed! Synced ${json.totalSynced} problems.`, { id: toastId });
+        await fetchDashboardStats();
+      } else {
+        toast.error(json.message || 'Universal sync failed', { id: toastId });
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Universal sync request failed', { id: toastId });
     } finally {
       setSyncing(false);
     }
@@ -225,7 +249,9 @@ export default function DashboardPage() {
       <StatsCards 
         stats={statsData} 
         onSyncPlatform={handleSyncPlatform}
+        onSyncAll={handleSyncAll}
         isSyncing={syncing}
+        syncingPlatform={syncingPlatform}
       />
 
       {/* AI Search Banner Section */}

@@ -64,17 +64,39 @@ export async function GET() {
       throw solvedError;
     }
 
-    // 4. Query user connected handles
+    // 4. Query user connected handles & latest sync history
     const { data: handlesData } = await supabase
       .from('user_platform_handles')
       .select('platform, handle, updated_at, created_at')
       .eq('user_id', user.id);
 
-    const connectedHandles = (handlesData || []).map((h: any) => ({
-      platform: h.platform,
-      handle: h.handle,
-      lastSyncedAt: h.updated_at || h.created_at || new Date().toISOString(),
-    }));
+    let latestSyncMap: Record<string, any> = {};
+    try {
+      const { data: syncHistoryData } = await supabase
+        .from('sync_history')
+        .select('platform, synced_count, status, synced_at, error_message')
+        .eq('user_id', user.id)
+        .order('synced_at', { ascending: false });
+
+      for (const row of (syncHistoryData || [])) {
+        if (!latestSyncMap[row.platform]) {
+          latestSyncMap[row.platform] = row;
+        }
+      }
+    } catch (histErr) {
+      console.warn('Could not load sync_history table:', histErr);
+    }
+
+    const connectedHandles = (handlesData || []).map((h: any) => {
+      const syncRecord = latestSyncMap[h.platform];
+      return {
+        platform: h.platform,
+        handle: h.handle,
+        lastSyncedAt: syncRecord?.synced_at || h.updated_at || h.created_at || null,
+        syncedCount: syncRecord?.synced_count ?? null,
+        syncStatus: syncRecord?.status || (h.handle ? 'idle' : 'unconnected'),
+      };
+    });
 
     // 5. Compute Analytics
     const solvedList = (solvedRows || []).map((r: any) => ({

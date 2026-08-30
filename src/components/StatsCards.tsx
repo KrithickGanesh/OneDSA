@@ -3,14 +3,16 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Target, Database, Award, Flame, ExternalLink, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Target, Database, Award, Flame, ExternalLink, RefreshCw, CheckCircle2, AlertCircle, Play } from 'lucide-react';
 import { PLATFORMS } from '@/lib/constants';
 import { DashboardStatsResponse } from '@/app/api/dashboard/stats/route';
 
 interface StatsCardsProps {
   stats: DashboardStatsResponse;
   onSyncPlatform?: (platform: string) => Promise<void>;
+  onSyncAll?: () => Promise<void>;
   isSyncing?: boolean;
+  syncingPlatform?: string | null;
 }
 
 function AnimatedNumber({ value }: { value: number }) {
@@ -42,9 +44,10 @@ function AnimatedNumber({ value }: { value: number }) {
   return <span>{displayValue}</span>;
 }
 
-function formatRelativeTime(isoString: string) {
+function formatRelativeTime(isoString?: string | null) {
   if (!isoString) return 'Never';
   const diffMs = Date.now() - new Date(isoString).getTime();
+  if (isNaN(diffMs)) return 'Never';
   const diffMins = Math.floor(diffMs / 60000);
   if (diffMins < 1) return 'Just now';
   if (diffMins < 60) return `${diffMins}m ago`;
@@ -56,7 +59,13 @@ function formatRelativeTime(isoString: string) {
   return new Date(isoString).toLocaleDateString();
 }
 
-export function StatsCards({ stats, onSyncPlatform, isSyncing = false }: StatsCardsProps) {
+export function StatsCards({ 
+  stats, 
+  onSyncPlatform, 
+  onSyncAll,
+  isSyncing = false,
+  syncingPlatform = null
+}: StatsCardsProps) {
   const total = stats.totalSolved || 0;
   const easyPct = total > 0 ? Math.round((stats.easySolved / total) * 100) : 0;
   const medPct = total > 0 ? Math.round((stats.mediumSolved / total) * 100) : 0;
@@ -247,32 +256,33 @@ export function StatsCards({ stats, onSyncPlatform, isSyncing = false }: StatsCa
           </div>
         </Card>
 
-        {/* Chart 3: Platform Breakdown & Sync Status */}
+        {/* Chart 3: Platform Breakdown & Universal Sync */}
         <Card className="bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
           <CardHeader className="p-0 pb-4">
             <CardTitle className="text-base font-semibold text-white flex items-center justify-between">
               <span>Platforms & Sync</span>
-              {onSyncPlatform && (
+              {onSyncAll && (
                 <button
-                  onClick={() => onSyncPlatform('leetcode')}
+                  onClick={onSyncAll}
                   disabled={isSyncing}
-                  className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/30 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all shadow-sm"
                 >
-                  <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                  Sync
+                  <RefreshCw className={`w-3 h-3 ${isSyncing && !syncingPlatform ? 'animate-spin' : ''}`} />
+                  <span>Sync All</span>
                 </button>
               )}
             </CardTitle>
           </CardHeader>
 
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {PLATFORMS.map((platform) => {
               const handleObj = stats.connectedHandles.find(h => h.platform === platform.id);
               const count = stats.platforms[platform.id] || 0;
               const isConnected = Boolean(handleObj?.handle);
+              const isThisSyncing = isSyncing && syncingPlatform === platform.id;
 
               return (
-                <div key={platform.id} className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/5">
+                <div key={platform.id} className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-colors">
                   <div className="flex items-center gap-2.5">
                     <span 
                       className="w-2.5 h-2.5 rounded-full shrink-0" 
@@ -282,18 +292,33 @@ export function StatsCards({ stats, onSyncPlatform, isSyncing = false }: StatsCa
                       <div className="text-xs font-semibold text-white flex items-center gap-1.5">
                         {platform.name}
                         {isConnected && (
-                          <span className="text-[10px] text-gray-400 font-normal">(@{handleObj?.handle})</span>
+                          <span className="text-[10px] text-cyan-400 font-medium">(@{handleObj?.handle})</span>
                         )}
                       </div>
                       <div className="text-[10px] text-gray-500">
-                        {isConnected ? `Synced: ${formatRelativeTime(handleObj?.lastSyncedAt || '')}` : 'Not connected'}
+                        {isConnected 
+                          ? `Last sync: ${formatRelativeTime(handleObj?.lastSyncedAt)}` 
+                          : 'Not connected'}
                       </div>
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    <span className="text-xs font-bold text-white">{count}</span>
-                    <span className="text-[10px] text-gray-500 block">solved</span>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-white">{count}</span>
+                      <span className="text-[10px] text-gray-500 block">solved</span>
+                    </div>
+
+                    {isConnected && onSyncPlatform && (
+                      <button
+                        onClick={() => onSyncPlatform(platform.id)}
+                        disabled={isSyncing}
+                        title={`Sync ${platform.name}`}
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-gray-400 hover:text-cyan-300 border border-white/5 hover:border-cyan-500/30 transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isThisSyncing ? 'animate-spin text-cyan-400' : ''}`} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
