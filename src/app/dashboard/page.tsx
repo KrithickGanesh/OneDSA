@@ -145,23 +145,26 @@ export default function DashboardPage() {
   };
 
   // 4. Live Platform Sync Trigger
+  const supportedSyncPlatforms = ['leetcode', 'codeforces'];
+
   const handleSyncPlatform = async (platform: string) => {
-    if (platform !== 'leetcode') {
+    if (!supportedSyncPlatforms.includes(platform)) {
       toast.info(`${platform} sync coming in future release!`);
       return;
     }
 
     setSyncing(true);
-    const toastId = toast.loading('Syncing LeetCode solved problems...');
+    const platformName = platform.charAt(0).toUpperCase() + platform.slice(1);
+    const toastId = toast.loading(`Syncing ${platformName} solved problems...`);
     try {
-      const res = await fetch('/api/sync/leetcode', { method: 'POST' });
+      const res = await fetch(`/api/sync/${platform}`, { method: 'POST' });
       const json = await res.json();
 
       if (json.success) {
-        toast.success(json.message || 'LeetCode sync completed!', { id: toastId });
+        toast.success(json.message || `${platformName} sync completed!`, { id: toastId });
         await fetchDashboardStats();
       } else {
-        toast.error(json.message || 'Failed to sync LeetCode problems', { id: toastId });
+        toast.error(json.message || `Failed to sync ${platformName} problems`, { id: toastId });
       }
     } catch (err: any) {
       toast.error(err.message || 'Sync request failed', { id: toastId });
