@@ -29,6 +29,12 @@ export async function fetchLeetCodeSolved(username: string) {
         }
       }
 
+      recentAcSubmissionList(username: $username, limit: 100) {
+        title
+        titleSlug
+        timestamp
+      }
+
       recentSubmissionList(username: $username) {
         title
         titleSlug
@@ -49,6 +55,42 @@ export async function fetchLeetCodeSolved(username: string) {
   });
 
   return await response.json();
+}
+
+export async function fetchLeetCodeQuestionDetails(titleSlug: string) {
+  const query = `
+    query getQuestionDetails($titleSlug: String!) {
+      question(titleSlug: $titleSlug) {
+        questionId
+        title
+        titleSlug
+        difficulty
+        topicTags {
+          name
+          slug
+        }
+      }
+    }
+  `;
+
+  try {
+    const response = await fetch(LEETCODE_API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query,
+        variables: { titleSlug },
+      }),
+    });
+
+    const data = await response.json();
+    return data?.data?.question || null;
+  } catch (error) {
+    console.error(`Failed to fetch details for ${titleSlug}:`, error);
+    return null;
+  }
 }
 
 
