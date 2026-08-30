@@ -41,7 +41,7 @@ export function FilterPanel({ onFilter, isLoading }: FilterPanelProps) {
   const [tagInput, setTagInput] = useState('');
   const [difficulty, setDifficulty] = useState<string>('All');
   const [limit, setLimit] = useState<number>(20);
-  const [solvedStatus, setSolvedStatus] = useState<'all' | 'unsolved' | 'solved'>('all');
+  const [solvedStatus, setSolvedStatus] = useState<'all' | 'unsolved' | 'solved'>('unsolved');
   const [sortBy, setSortBy] = useState('difficulty');
 
   const togglePlatform = (id: string) => {

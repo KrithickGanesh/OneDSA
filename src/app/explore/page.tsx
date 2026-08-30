@@ -37,7 +37,7 @@ export default function ExplorePage() {
     difficulty_min: null,
     difficulty_max: null,
     limit: 20,
-    exclude_solved: false,
+    exclude_solved: true,
     solved_only: false,
     sort_by: 'difficulty',
   };

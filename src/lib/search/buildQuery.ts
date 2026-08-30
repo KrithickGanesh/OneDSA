@@ -42,8 +42,9 @@ export async function executeSearchQuery(
       .filter((id: any): id is string => Boolean(id));
   }
 
-  const shouldExcludeSolved = params.unsolved || params.exclude_solved;
-  const shouldFilterSolvedOnly = params.solved_only;
+  // Default to excluding solved problems unless explicitly requested to include them or filter solved only
+  const shouldExcludeSolved = (params.unsolved !== false && params.exclude_solved !== false) && !params.solved_only;
+  const shouldFilterSolvedOnly = Boolean(params.solved_only);
 
   // 2. Build Supabase query on problems table
   let queryBuilder = supabase.from('problems').select('*');

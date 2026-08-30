@@ -26,7 +26,7 @@ export async function parsePrompt(prompt: string, customApiKey?: string): Promis
   });
 
   const systemPrompt = `
-You are an AI parser for a DSA platform called OneDSA.
+You are an AI parser for a competitive programming platform called OneDSA.
 
 Convert the user's request into structured JSON filters.
 
@@ -44,8 +44,8 @@ Schema:
 
 Rules:
 - Map topics to standard DSA categories like "Tree", "Array", "Dynamic Programming", "Graph", "String", "Binary Search", "Hash Table", "Two Pointers", "Stack", "Queue", "Math", "Greedy", etc.
-- Map platform names to lowercase strings: ["leetcode", "codeforces", "codechef", "hackerrank", "gfg"]. If no specific platform is mentioned, include ["leetcode", "codeforces", "codechef", "hackerrank", "gfg"].
-- If the user asks for unsolved, new, or problems they haven't done, set unsolved to true.
+- Map platform names to lowercase strings: ["leetcode", "codeforces", "codechef", "hackerrank", "gfg"]. If no specific platform is mentioned, include all platforms: ["leetcode", "codeforces", "codechef", "hackerrank", "gfg"].
+- CRITICAL: Always default "unsolved" to true. OneDSA is designed to exclusively find new problems the user has NOT solved yet across all platforms. Only set "unsolved" to false if the user explicitly asks for "all problems", "solved problems", or "include solved".
 - Default limit to 5 if not specified.
 - If the user asks for problems similar to a specific problem (e.g. "Similar to Two Sum"), set similarTo to that problem title/slug.
 `;
@@ -60,5 +60,12 @@ Rules:
   // Clean markdown fences if present
   text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
-  return JSON.parse(text) as ParsedPromptResult;
+  const parsed = JSON.parse(text) as ParsedPromptResult;
+  
+  // Guarantee unsolved defaults to true unless explicitly requested otherwise
+  if (parsed.unsolved === undefined || parsed.unsolved === null) {
+    parsed.unsolved = true;
+  }
+
+  return parsed;
 }
