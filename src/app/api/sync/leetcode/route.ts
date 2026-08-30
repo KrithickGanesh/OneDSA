@@ -49,19 +49,39 @@ export async function POST(req: Request) {
     // Fetch LeetCode data
     const data = await fetchLeetCodeSolved(username);
 
-    // Insert only the first recent submission for now
+    // Insert the first recent submission, fetch its UUID, and mark it as solved
     const submission = data?.data?.recentSubmissionList?.[0];
     if (submission) {
-      await supabase
+      const { data: problem, error: problemError } = await supabase
         .from("problems")
-        .upsert({
-          platform: "leetcode",
-          platform_problem_id: submission.titleSlug,
-          title: submission.title,
-          slug: submission.titleSlug,
-          difficulty: "Unknown",
-          url: `https://leetcode.com/problems/${submission.titleSlug}/`,
-        }, { onConflict: "platform,platform_problem_id" });
+        .upsert(
+          {
+            platform: "leetcode",
+            platform_problem_id: submission.titleSlug,
+            title: submission.title,
+            slug: submission.titleSlug,
+            difficulty: "Unknown",
+            url: `https://leetcode.com/problems/${submission.titleSlug}/`,
+          },
+          { onConflict: "platform,platform_problem_id" }
+        )
+        .select("id")
+        .single();
+
+      if (problemError) {
+        throw problemError;
+      }
+
+      if (problem?.id) {
+        await supabase.from("user_problem_status").upsert(
+          {
+            user_id: user.id,
+            problem_id: problem.id,
+            status: "solved",
+          },
+          { onConflict: "user_id,problem_id" }
+        );
+      }
     }
 
     return NextResponse.json({
