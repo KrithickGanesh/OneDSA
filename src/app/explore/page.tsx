@@ -1,23 +1,33 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FilterPanel, SearchFilters } from '@/components/FilterPanel';
 import { ProblemTable } from '@/components/ProblemTable';
 import { AIPromptBar } from '@/components/AIPromptBar';
 import { Problem } from '@/lib/types';
 import { PLATFORMS } from '@/lib/constants';
-import { Compass, Sparkles, SlidersHorizontal, RefreshCw, X } from 'lucide-react';
+import { Compass, Sparkles, SlidersHorizontal, RefreshCw, X, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
+interface CachedSearchResult {
+  problems: Problem[];
+  solvedIds: string[];
+  filters: any;
+}
+
 export default function ExplorePage() {
-  // Step 8A.1: State lives in explore/page.tsx as single source of truth
+  // Single source of truth for problem data
   const [problems, setProblems] = useState<Problem[]>([]);
   const [solvedIds, setSolvedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [lastFilters, setLastFilters] = useState<any>(null);
   const [activeQueryTitle, setActiveQueryTitle] = useState<string | null>(null);
+  const [isCachedHit, setIsCachedHit] = useState(false);
+
+  // Improvement 3: In-Memory Search Cache for instant zero-cost repeated queries
+  const searchCacheRef = useRef<Map<string, CachedSearchResult>>(new Map());
 
   // Default initial filters
   const defaultFilters: SearchFilters = {
@@ -35,6 +45,7 @@ export default function ExplorePage() {
   // Step 8C: Manual Filter Search
   const handleFilterSearch = useCallback(async (filters: SearchFilters) => {
     setLoading(true);
+    setIsCachedHit(false);
     try {
       const response = await fetch('/api/search/filter', {
         method: 'POST',
@@ -60,6 +71,7 @@ export default function ExplorePage() {
         difficulty: filters.difficulty_level || null,
         platforms: filters.platforms.length < PLATFORMS.length ? filters.platforms : null,
         unsolved: filters.exclude_solved,
+        limit: filters.limit,
       });
       setActiveQueryTitle(null);
     } catch (error: any) {
@@ -71,10 +83,26 @@ export default function ExplorePage() {
     }
   }, []);
 
-  // Step 8A.3: AI Prompt Search Handler
+  // Step 8A: AI Prompt Search Handler with In-Memory Caching (Improvement 3)
   const handleAISearch = async (prompt: string) => {
+    const normalizedKey = prompt.trim().toLowerCase();
+    setActiveQueryTitle(`"${prompt.trim()}"`);
+
+    // Check in-memory cache first
+    const cached = searchCacheRef.current.get(normalizedKey);
+    if (cached) {
+      setProblems(cached.problems);
+      setSolvedIds(new Set(cached.solvedIds));
+      setLastFilters(cached.filters);
+      setIsCachedHit(true);
+      toast.success(`Found ${cached.problems.length} problems (Cached)`, {
+        description: 'Instant response from memory cache',
+      });
+      return;
+    }
+
     setLoading(true);
-    setActiveQueryTitle(`"${prompt}"`);
+    setIsCachedHit(false);
     try {
       const response = await fetch('/api/search/ai', {
         method: 'POST',
@@ -89,14 +117,21 @@ export default function ExplorePage() {
 
       const data = await response.json();
       const list: Problem[] = data.results || data.problems || [];
-      setProblems(list);
+      const solvedArr: string[] = data.solvedIds || [];
 
-      if (data.solvedIds && Array.isArray(data.solvedIds)) {
-        setSolvedIds(new Set(data.solvedIds));
-      }
+      setProblems(list);
+      setSolvedIds(new Set(solvedArr));
 
       if (data.filters) {
         setLastFilters(data.filters);
+        
+        // Store in cache for future repeated prompts
+        searchCacheRef.current.set(normalizedKey, {
+          problems: list,
+          solvedIds: solvedArr,
+          filters: data.filters,
+        });
+
         const diffText = data.filters.difficulty ? `${data.filters.difficulty} ` : '';
         const topicText = data.filters.topic ? `${data.filters.topic} ` : '';
         toast.success(`Found ${list.length} problems`, {
@@ -120,6 +155,7 @@ export default function ExplorePage() {
   const handleResetToDefault = () => {
     setActiveQueryTitle(null);
     setLastFilters(null);
+    setIsCachedHit(false);
     handleFilterSearch(defaultFilters);
   };
 
@@ -136,14 +172,14 @@ export default function ExplorePage() {
           </p>
         </div>
 
-        {/* Status Indicator */}
+        {/* Status Actions */}
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={handleResetToDefault}
             disabled={loading}
-            className="h-9 px-3 text-xs bg-white/5 border-white/10 hover:bg-white/10 text-gray-300 gap-1.5"
+            className="h-9 px-3 text-xs bg-white/5 border-white/10 hover:bg-white/10 text-gray-300 gap-1.5 rounded-xl cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Reset All
@@ -156,49 +192,67 @@ export default function ExplorePage() {
         <AIPromptBar onSearch={handleAISearch} isLoading={loading} />
       </div>
 
-      {/* Active Filter / Search Query Banner */}
+      {/* Improvement 2: Active Filters Ribbon */}
       {(activeQueryTitle || lastFilters) && (
-        <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-gradient-to-r from-cyan-500/10 via-blue-500/5 to-purple-500/10 border border-cyan-500/20 backdrop-blur-md">
-          <div className="flex flex-wrap items-center gap-2">
-            {activeQueryTitle ? (
-              <span className="flex items-center gap-1.5 text-xs text-cyan-300 font-medium">
-                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                AI Search: <span className="text-white font-semibold">{activeQueryTitle}</span>
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5 text-xs text-gray-300 font-medium">
-                <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
-                Manual Filters Active
-              </span>
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-gradient-to-r from-cyan-500/10 via-blue-500/5 to-purple-500/10 border border-cyan-500/20 backdrop-blur-xl shadow-lg">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="flex items-center gap-1.5 text-xs text-cyan-300 font-semibold uppercase tracking-wider">
+              {activeQueryTitle ? (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                  Active Search
+                </>
+              ) : (
+                <>
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
+                  Active Filters
+                </>
+              )}
+            </span>
+
+            {isCachedHit && (
+              <Badge variant="outline" className="text-[10px] bg-cyan-500/20 text-cyan-300 border-cyan-500/30 flex items-center gap-1">
+                <Zap className="w-3 h-3 text-cyan-400 fill-cyan-400" />
+                Cached Result
+              </Badge>
+            )}
+
+            {lastFilters?.difficulty && (
+              <Badge variant="outline" className="text-xs bg-white/10 border-white/15 text-white font-medium">
+                {lastFilters.difficulty}
+              </Badge>
             )}
 
             {lastFilters?.topic && (
-              <Badge variant="outline" className="text-[11px] bg-white/10 border-white/15 text-white">
+              <Badge variant="outline" className="text-xs bg-white/10 border-white/15 text-white font-medium">
                 Topic: {lastFilters.topic}
               </Badge>
             )}
-            {lastFilters?.difficulty && (
-              <Badge variant="outline" className="text-[11px] bg-white/10 border-white/15 text-white">
-                Difficulty: {lastFilters.difficulty}
+
+            {lastFilters?.platforms && Array.isArray(lastFilters.platforms) && lastFilters.platforms.length > 0 && (
+              <Badge variant="outline" className="text-xs bg-white/10 border-white/15 text-white font-medium">
+                {lastFilters.platforms.join(', ')}
               </Badge>
             )}
-            {lastFilters?.platforms && lastFilters.platforms.length > 0 && (
-              <Badge variant="outline" className="text-[11px] bg-white/10 border-white/15 text-white">
-                Platforms: {lastFilters.platforms.join(', ')}
-              </Badge>
-            )}
+
             {lastFilters?.unsolved && (
-              <Badge variant="outline" className="text-[11px] bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
+              <Badge variant="outline" className="text-xs bg-emerald-500/20 text-emerald-300 border-emerald-500/30 font-medium">
                 Unsolved Only
+              </Badge>
+            )}
+
+            {lastFilters?.limit && (
+              <Badge variant="outline" className="text-xs bg-white/5 border-white/10 text-gray-400">
+                Limit: {lastFilters.limit}
               </Badge>
             )}
           </div>
 
           <button
             onClick={handleResetToDefault}
-            className="text-xs text-gray-400 hover:text-white flex items-center gap-1 transition-colors ml-auto cursor-pointer"
+            className="text-xs text-gray-400 hover:text-white flex items-center gap-1.5 transition-colors ml-auto cursor-pointer font-medium"
           >
-            <X className="w-3.5 h-3.5" /> Clear Filters
+            <X className="w-3.5 h-3.5" /> Clear
           </button>
         </div>
       )}

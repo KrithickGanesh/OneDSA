@@ -4,8 +4,9 @@ import React from 'react';
 import { Problem } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
-import { CheckCircle, ExternalLink, Star } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Star } from 'lucide-react';
 import { PLATFORMS } from '@/lib/constants';
+import { getDifficultyColor } from './ProblemTable';
 
 interface ProblemCardProps {
   problem: Problem;
@@ -14,91 +15,85 @@ interface ProblemCardProps {
 
 export function ProblemCard({ problem, isSolved = false }: ProblemCardProps) {
   const platformConfig = PLATFORMS.find((p) => p.id === problem.platform);
-  
-  const getDifficultyColor = (diff: string) => {
-    switch (diff.toLowerCase()) {
-      case 'easy':
-        return 'bg-green-500/20 text-green-500 border-green-500/30';
-      case 'medium':
-        return 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30';
-      case 'hard':
-        return 'bg-red-500/20 text-red-500 border-red-500/30';
-      default:
-        return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
-    }
-  };
+  const diffStyle = getDifficultyColor(problem.difficultyLevel);
 
   const getDifficultyDisplay = () => {
     if (problem.difficultyRating) {
       return `${problem.difficultyLevel} (${problem.difficultyRating})`;
     }
-    return problem.difficultyLevel;
+    return problem.difficultyLevel || 'Medium';
   };
 
   return (
     <Card 
-      className="relative flex flex-col h-full bg-black/40 backdrop-blur-md border-white/10 hover:border-white/20 transition-all duration-300 overflow-hidden group cursor-pointer hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:shadow-cyan-500/10"
+      className="relative flex flex-col h-full bg-black/40 backdrop-blur-md border-white/10 hover:border-cyan-500/30 transition-all duration-300 overflow-hidden group cursor-pointer hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.2)] hover:shadow-cyan-500/10 rounded-2xl"
       onClick={() => window.open(problem.url, '_blank')}
     >
-      {isSolved && (
-        <div className="absolute top-3 right-3 z-10">
-          <CheckCircle className="w-5 h-5 text-green-500 fill-green-500/20" />
-        </div>
-      )}
-      
-      <CardHeader className="pb-3 pt-5 px-5">
-        <div className="flex justify-between items-start mb-2 pr-6">
+      <CardHeader className="pb-3 pt-5 px-5 space-y-2">
+        <div className="flex justify-between items-center gap-2">
           <Badge 
             variant="outline" 
-            className="text-xs font-semibold px-2 py-0.5 border-none"
+            className="text-xs font-semibold px-2.5 py-0.5 border-white/10"
             style={{ 
-              backgroundColor: `${platformConfig?.color}20`,
-              color: platformConfig?.color 
+              backgroundColor: `${platformConfig?.color}15`,
+              color: platformConfig?.color || '#94a3b8'
             }}
           >
+            <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: platformConfig?.color || '#94a3b8' }}></span>
             {platformConfig?.name || problem.platform}
           </Badge>
           
-          <Badge 
-            variant="outline" 
-            className={`text-xs ${getDifficultyColor(problem.difficultyLevel)}`}
-          >
-            {getDifficultyDisplay()}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            {isSolved && (
+              <Badge variant="outline" className="text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border-emerald-500/30 px-2 py-0.5 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                <span>Solved already</span>
+              </Badge>
+            )}
+            <Badge 
+              variant="outline" 
+              className={`text-xs font-medium ${diffStyle.badge}`}
+            >
+              {getDifficultyDisplay()}
+            </Badge>
+          </div>
         </div>
         
-        <h3 className="font-semibold text-lg text-white leading-tight group-hover:text-cyan-400 transition-colors line-clamp-2">
+        <h3 className="font-semibold text-lg text-white leading-snug group-hover:text-cyan-400 transition-colors line-clamp-2 pt-1">
           {problem.title}
           {problem.isPremium && (
-            <Star className="inline-block ml-2 w-4 h-4 text-yellow-500 fill-yellow-500" />
+            <Star className="inline-block ml-1.5 w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
           )}
         </h3>
       </CardHeader>
       
       <CardContent className="px-5 pb-4 flex-grow">
-        <div className="flex flex-wrap gap-1.5 mt-2">
+        <div className="flex flex-wrap gap-1.5 mt-1">
           {problem.tags.slice(0, 3).map((tag, i) => (
-            <Badge key={i} variant="secondary" className="bg-white/5 text-gray-300 hover:bg-white/10 border-none text-[10px] px-2 py-0.5">
+            <span key={i} className="text-[11px] px-2 py-0.5 rounded-md bg-white/5 border border-white/5 text-gray-300">
               {tag}
-            </Badge>
+            </span>
           ))}
           {problem.tags.length > 3 && (
-            <Badge variant="secondary" className="bg-white/5 text-gray-400 border-none text-[10px] px-2 py-0.5">
-              +{problem.tags.length - 3} more
-            </Badge>
+            <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/5 border border-white/5 text-gray-400">
+              +{problem.tags.length - 3}
+            </span>
           )}
         </div>
       </CardContent>
       
-      <CardFooter className="px-5 py-3 border-t border-white/5 flex justify-between items-center bg-white/[0.02]">
+      <CardFooter className="px-5 py-3.5 border-t border-white/5 flex justify-between items-center bg-white/[0.02]">
         <div className="text-xs text-gray-400">
           {problem.acceptanceRate ? (
             <span>Acceptance: {(problem.acceptanceRate * 100).toFixed(1)}%</span>
           ) : (
-            <span>Acceptance: N/A</span>
+            <span className="text-gray-500">ID: {problem.platformProblemId}</span>
           )}
         </div>
-        <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-white transition-colors" />
+        <div className="flex items-center gap-1 text-xs font-medium text-cyan-400 group-hover:text-cyan-300">
+          <span>Open Problem</span>
+          <ExternalLink className="w-3.5 h-3.5" />
+        </div>
       </CardFooter>
     </Card>
   );
