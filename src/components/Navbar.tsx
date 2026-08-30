@@ -51,6 +51,8 @@ export default function Navbar() {
     ? [
         { name: "Dashboard", href: "/dashboard" },
         { name: "Explore", href: "/explore" },
+        { name: "Collections", href: "/collections" },
+        { name: "Revision", href: "/revision" },
         { name: "Settings", href: "/settings" },
       ]
     : [];

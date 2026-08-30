@@ -3,11 +3,13 @@
 import React, { useState } from 'react';
 import { Problem } from '@/lib/types';
 import { ProblemCard } from './ProblemCard';
-import { CheckCircle2, Circle, ExternalLink, LayoutGrid, List, SearchX } from 'lucide-react';
+import { SaveToCollectionModal } from './SaveToCollectionModal';
+import { CheckCircle2, Circle, ExternalLink, LayoutGrid, List, SearchX, Bookmark, Brain } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { PLATFORMS } from '@/lib/constants';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface ProblemTableProps {
   problems: Problem[];
@@ -45,51 +47,39 @@ export function getDifficultyColor(diff: string) {
       };
     default:
       return {
-        badge: 'bg-gray-500/15 text-gray-400 border-gray-500/30 hover:bg-gray-500/20',
-        text: 'text-gray-400',
-        dot: 'bg-gray-400',
+        badge: 'bg-slate-500/15 text-slate-400 border-slate-500/30 hover:bg-slate-500/20',
+        text: 'text-slate-400',
+        dot: 'bg-slate-400',
       };
   }
 }
 
-export function ProblemTable({ 
-  problems, 
-  solvedIds = new Set(), 
+export function ProblemTable({
+  problems,
+  solvedIds = new Set(),
   isLoading = false,
-  viewMode: initialViewMode = 'table',
+  viewMode: controlledViewMode,
   onViewModeChange,
-  activeFilters = null,
+  activeFilters,
 }: ProblemTableProps) {
-  const [viewMode, setViewMode] = useState<'card' | 'table'>(initialViewMode);
-  const [sortField, setSortField] = useState<'difficulty' | 'title' | 'platform'>('difficulty');
+  const [internalViewMode, setInternalViewMode] = useState<'card' | 'table'>('table');
+  const [sortField, setSortField] = useState<'title' | 'difficulty' | 'platform'>('difficulty');
   const [sortAsc, setSortAsc] = useState(true);
 
+  // Bookmark Collection Modal State
+  const [selectedProblemForCollection, setSelectedProblemForCollection] = useState<Problem | null>(null);
+
+  const viewMode = controlledViewMode ?? internalViewMode;
+
   const handleViewModeToggle = (mode: 'card' | 'table') => {
-    setViewMode(mode);
-    onViewModeChange?.(mode);
+    if (onViewModeChange) {
+      onViewModeChange(mode);
+    } else {
+      setInternalViewMode(mode);
+    }
   };
 
-  const getPlatformConfig = (platformId: string) => 
-    PLATFORMS.find((p) => p.id === platformId);
-
-  // Sorting logic
-  const sortedProblems = [...problems].sort((a, b) => {
-    let comp = 0;
-    if (sortField === 'title') {
-      comp = a.title.localeCompare(b.title);
-    } else if (sortField === 'platform') {
-      comp = a.platform.localeCompare(b.platform);
-    } else if (sortField === 'difficulty') {
-      const diffOrder: Record<string, number> = { 'Easy': 1, 'Medium': 2, 'Hard': 3 };
-      comp = (diffOrder[a.difficultyLevel] || 0) - (diffOrder[b.difficultyLevel] || 0);
-      if (comp === 0 && a.difficultyRating && b.difficultyRating) {
-        comp = a.difficultyRating - b.difficultyRating;
-      }
-    }
-    return sortAsc ? comp : -comp;
-  });
-
-  const handleSort = (field: 'difficulty' | 'title' | 'platform') => {
+  const handleSort = (field: 'title' | 'difficulty' | 'platform') => {
     if (sortField === field) {
       setSortAsc(!sortAsc);
     } else {
@@ -98,87 +88,102 @@ export function ProblemTable({
     }
   };
 
-  // Step 8D: Premium Skeleton Loading State
+  const handleQuickScheduleRevision = async (e: React.MouseEvent, problem: Problem) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch('/api/revision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ problemId: problem.id, quality: 3 }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Queued for Revision`, {
+          description: `"${problem.title}" scheduled in Spaced Repetition queue.`,
+        });
+      } else {
+        toast.error(data.error || 'Failed to schedule revision');
+      }
+    } catch (err: any) {
+      toast.error('Error queuing revision', { description: err.message });
+    }
+  };
+
+  const sortedProblems = [...problems].sort((a, b) => {
+    let comparison = 0;
+    if (sortField === 'title') {
+      comparison = a.title.localeCompare(b.title);
+    } else if (sortField === 'platform') {
+      comparison = a.platform.localeCompare(b.platform);
+    } else if (sortField === 'difficulty') {
+      const diffRank: Record<string, number> = { easy: 1, medium: 2, hard: 3, unknown: 4 };
+      const rankA = diffRank[a.difficultyLevel.toLowerCase()] || 2;
+      const rankB = diffRank[b.difficultyLevel.toLowerCase()] || 2;
+      comparison = rankA - rankB;
+    }
+    return sortAsc ? comparison : -comparison;
+  });
+
+  const getPlatformConfig = (platId: string) => {
+    return PLATFORMS.find((p) => p.id === platId);
+  };
+
+  // 1. Loading Skeleton State
   if (isLoading) {
     return (
-      <div className="w-full space-y-4 animate-pulse">
-        <div className="flex justify-between items-center mb-6">
-          <div className="h-6 w-44 bg-white/10 rounded-lg"></div>
-          <div className="flex gap-2">
-            <div className="h-9 w-9 bg-white/10 rounded-lg"></div>
-            <div className="h-9 w-9 bg-white/10 rounded-lg"></div>
-          </div>
+      <div className="space-y-4">
+        <div className="flex justify-between items-center pb-2">
+          <div className="h-4 w-32 bg-white/10 rounded animate-pulse" />
+          <div className="h-8 w-20 bg-white/10 rounded-lg animate-pulse" />
         </div>
-        
-        {viewMode === 'card' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="rounded-2xl border border-white/10 bg-black/40 overflow-hidden shadow-xl">
+          <div className="divide-y divide-white/5">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="h-52 rounded-2xl bg-white/[0.03] border border-white/10 p-5 space-y-4">
-                <div className="flex justify-between items-center">
-                  <div className="h-5 w-20 bg-white/10 rounded-full"></div>
-                  <div className="h-5 w-16 bg-white/10 rounded-full"></div>
+              <div key={i} className="flex items-center justify-between p-4 gap-4 animate-pulse">
+                <div className="w-5 h-5 rounded-full bg-white/10 shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-white/10 rounded w-1/3" />
+                  <div className="h-3 bg-white/5 rounded w-1/4" />
                 </div>
-                <div className="h-6 w-3/4 bg-white/10 rounded"></div>
-                <div className="flex gap-2 pt-4">
-                  <div className="h-4 w-12 bg-white/10 rounded"></div>
-                  <div className="h-4 w-16 bg-white/10 rounded"></div>
-                </div>
+                <div className="h-6 w-16 bg-white/10 rounded-full" />
+                <div className="h-6 w-16 bg-white/10 rounded-full" />
+                <div className="h-8 w-16 bg-white/10 rounded-lg" />
               </div>
             ))}
           </div>
-        ) : (
-          <div className="rounded-2xl border border-white/10 bg-black/40 overflow-hidden">
-            <div className="h-12 bg-white/5 border-b border-white/10"></div>
-            <div className="divide-y divide-white/5">
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                <div key={i} className="h-16 px-6 flex items-center justify-between gap-4">
-                  <div className="h-5 w-5 bg-white/10 rounded-full"></div>
-                  <div className="h-5 w-1/3 bg-white/10 rounded"></div>
-                  <div className="h-5 w-20 bg-white/10 rounded-full"></div>
-                  <div className="h-5 w-16 bg-white/10 rounded-full"></div>
-                  <div className="h-5 w-24 bg-white/10 rounded-full"></div>
-                  <div className="h-8 w-24 bg-white/10 rounded-lg"></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        </div>
       </div>
     );
   }
 
-  // Step 8D: Empty State with Active Filters
+  // 2. Empty State
   if (problems.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center px-4 rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl">
-        <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center mb-5 text-cyan-400 shadow-[0_0_30px_rgba(6,182,212,0.15)]">
+      <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl border border-white/10 bg-black/40 backdrop-blur-md shadow-xl my-6 space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shadow-[0_0_30px_rgba(6,182,212,0.15)]">
           <SearchX className="w-8 h-8" />
         </div>
-        <h3 className="text-xl font-semibold text-white mb-2">No matching problems found</h3>
-        <p className="text-gray-400 max-w-md text-sm mb-6">
-          We couldn't find any problems matching your current criteria. Try loosening your filters or asking a different AI prompt.
-        </p>
+        <div className="space-y-1 max-w-md">
+          <h3 className="text-xl font-bold text-white">No matching problems found</h3>
+          <p className="text-sm text-gray-400">
+            No problems match your current criteria. Try widening your filters or asking Gemini a different prompt.
+          </p>
+        </div>
 
         {activeFilters && (
-          <div className="flex flex-wrap items-center justify-center gap-2 max-w-lg p-3 rounded-xl bg-white/[0.02] border border-white/5">
-            <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold mr-1">Active Filters:</span>
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-2 max-w-lg">
             {activeFilters.topic && (
-              <Badge variant="outline" className="text-xs bg-white/5 text-gray-300 border-white/10">
+              <Badge variant="outline" className="text-xs bg-white/5 border-white/10 text-gray-300">
                 Topic: {activeFilters.topic}
               </Badge>
             )}
             {activeFilters.difficulty && (
-              <Badge variant="outline" className="text-xs bg-white/5 text-gray-300 border-white/10">
+              <Badge variant="outline" className="text-xs bg-white/5 border-white/10 text-gray-300">
                 Difficulty: {activeFilters.difficulty}
               </Badge>
             )}
-            {activeFilters.platforms && activeFilters.platforms.length > 0 && (
-              <Badge variant="outline" className="text-xs bg-white/5 text-gray-300 border-white/10">
-                Platforms: {activeFilters.platforms.join(', ')}
-              </Badge>
-            )}
             {activeFilters.unsolved && (
-              <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+              <Badge variant="outline" className="text-xs bg-emerald-500/15 border-emerald-500/30 text-emerald-400">
                 Unsolved Only
               </Badge>
             )}
@@ -188,15 +193,15 @@ export function ProblemTable({
     );
   }
 
-  const platformCounts = problems.reduce((acc, p) => {
-    acc[p.platform] = (acc[p.platform] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  const platformCounts: Record<string, number> = {};
+  problems.forEach(p => {
+    platformCounts[p.platform] = (platformCounts[p.platform] || 0) + 1;
+  });
 
   return (
-    <div className="w-full space-y-5">
-      {/* Table Header Summary & View Mode Switcher */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/[0.02] border border-white/5 rounded-2xl p-4">
+    <div className="space-y-4">
+      {/* Header Info & View Toggle */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-semibold text-white">
             {problems.length} {problems.length === 1 ? 'Problem Found' : 'Problems Found'}
@@ -245,6 +250,7 @@ export function ProblemTable({
               key={problem.id} 
               problem={problem} 
               isSolved={solvedIds.has(problem.id)} 
+              onSaveToCollection={() => setSelectedProblemForCollection(problem)}
             />
           ))}
         </div>
@@ -264,7 +270,7 @@ export function ProblemTable({
                   Difficulty {sortField === 'difficulty' && (sortAsc ? '↑' : '↓')}
                 </th>
                 <th className="px-5 py-4">Tags</th>
-                <th className="px-5 py-4 text-right">Action</th>
+                <th className="px-5 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -338,8 +344,27 @@ export function ProblemTable({
                       </div>
                     </td>
 
-                    {/* Action Button Column */}
-                    <td className="px-5 py-4 text-right">
+                    {/* Actions Column */}
+                    <td className="px-5 py-4 text-right space-x-1.5">
+                      {/* Save to Collection Button */}
+                      <button
+                        onClick={() => setSelectedProblemForCollection(problem)}
+                        title="Save to Collection"
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-cyan-300 hover:bg-cyan-500/10 border border-transparent hover:border-cyan-500/20 transition-colors cursor-pointer"
+                      >
+                        <Bookmark className="w-4 h-4 inline" />
+                      </button>
+
+                      {/* Add to Spaced Revision */}
+                      <button
+                        onClick={(e) => handleQuickScheduleRevision(e, problem)}
+                        title="Queue in Spaced Repetition"
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-purple-300 hover:bg-purple-500/10 border border-transparent hover:border-purple-500/20 transition-colors cursor-pointer"
+                      >
+                        <Brain className="w-4 h-4 inline" />
+                      </button>
+
+                      {/* Solve Link */}
                       <a 
                         href={problem.url} 
                         target="_blank" 
@@ -360,6 +385,13 @@ export function ProblemTable({
           </table>
         </div>
       )}
+
+      {/* Save to Collection Modal */}
+      <SaveToCollectionModal
+        problem={selectedProblemForCollection}
+        isOpen={Boolean(selectedProblemForCollection)}
+        onClose={() => setSelectedProblemForCollection(null)}
+      />
     </div>
   );
 }

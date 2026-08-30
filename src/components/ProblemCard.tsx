@@ -4,16 +4,17 @@ import React from 'react';
 import { Problem } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
-import { CheckCircle2, ExternalLink, Star } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Star, Bookmark } from 'lucide-react';
 import { PLATFORMS } from '@/lib/constants';
 import { getDifficultyColor } from './ProblemTable';
 
 interface ProblemCardProps {
   problem: Problem;
   isSolved?: boolean;
+  onSaveToCollection?: () => void;
 }
 
-export function ProblemCard({ problem, isSolved = false }: ProblemCardProps) {
+export function ProblemCard({ problem, isSolved = false, onSaveToCollection }: ProblemCardProps) {
   const platformConfig = PLATFORMS.find((p) => p.id === problem.platform);
   const diffStyle = getDifficultyColor(problem.difficultyLevel);
 
@@ -83,15 +84,26 @@ export function ProblemCard({ problem, isSolved = false }: ProblemCardProps) {
       </CardContent>
       
       <CardFooter className="px-5 py-3.5 border-t border-white/5 flex justify-between items-center bg-white/[0.02]">
-        <div className="text-xs text-gray-400">
-          {problem.acceptanceRate ? (
-            <span>Acceptance: {(problem.acceptanceRate * 100).toFixed(1)}%</span>
-          ) : (
-            <span className="text-gray-500">ID: {problem.platformProblemId}</span>
+        <div className="flex items-center gap-2">
+          {onSaveToCollection && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onSaveToCollection();
+              }}
+              title="Save to Collection"
+              className="p-1 rounded text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors cursor-pointer"
+            >
+              <Bookmark className="w-3.5 h-3.5" />
+            </button>
           )}
+          <span className="text-xs text-gray-500">
+            {problem.acceptanceRate ? `${(problem.acceptanceRate * 100).toFixed(0)}% acc` : `ID: ${problem.platformProblemId}`}
+          </span>
         </div>
+
         <div className="flex items-center gap-1 text-xs font-medium text-cyan-400 group-hover:text-cyan-300">
-          <span>Open Problem</span>
+          <span>Open</span>
           <ExternalLink className="w-3.5 h-3.5" />
         </div>
       </CardFooter>
