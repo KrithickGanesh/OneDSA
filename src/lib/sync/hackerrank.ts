@@ -65,5 +65,42 @@ export async function fetchHackerRankProblems(): Promise<Problem[]> {
 }
 
 export async function fetchHackerRankUserSolved(username: string): Promise<UserSolvedProblem[]> {
-  return [];
+  try {
+    // HackerRank has an undocumented but stable endpoint for submission histories
+    // Returns: { "challenge_slug": submission_count, ... }
+    const url = `${HR_API_BASE}/hackers/${username}/submission_histories`;
+    const response = await fetchWithTimeout(url, {
+      headers: {
+        ...HEADERS,
+        'Accept': 'application/json',
+      },
+    }, 15000);
+
+    if (!response.ok) {
+      console.error(`HackerRank submission history fetch failed for ${username}: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+
+    // data is an object like { "challenge-slug": count, "another-challenge": count }
+    // Any entry with count > 0 means the user has at least one accepted submission
+    const solvedProblems: UserSolvedProblem[] = [];
+
+    if (data && typeof data === 'object') {
+      for (const [slug, count] of Object.entries(data)) {
+        if (typeof count === 'number' && count > 0) {
+          solvedProblems.push({
+            platform: 'hackerrank',
+            platformProblemId: slug,
+          });
+        }
+      }
+    }
+
+    return solvedProblems;
+  } catch (error) {
+    console.error(`HackerRank user solved sync error for ${username}:`, error);
+    return [];
+  }
 }

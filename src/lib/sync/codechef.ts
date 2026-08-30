@@ -62,5 +62,66 @@ export async function fetchCodeChefProblems(): Promise<Problem[]> {
 }
 
 export async function fetchCodeChefUserSolved(handle: string): Promise<UserSolvedProblem[]> {
-  return [];
+  try {
+    // CodeChef user profile page contains solved problem codes in the HTML
+    const profileUrl = `https://www.codechef.com/users/${handle}`;
+    const response = await fetchWithTimeout(profileUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    }, 15000);
+
+    if (!response.ok) {
+      console.error(`CodeChef profile fetch failed for ${handle}: ${response.status}`);
+      return [];
+    }
+
+    const html = await response.text();
+
+    // Extract solved problem codes from the profile HTML
+    // CodeChef profile pages contain problem links in the "Fully Solved" section
+    // Pattern: /problems/PROBLEMCODE appearing in the solved section
+    const solvedProblems: UserSolvedProblem[] = [];
+    const seenCodes = new Set<string>();
+
+    // Method 1: Look for problem codes in the fully solved section
+    // The HTML typically contains links like href="/problems/PROBLEMCODE"
+    const problemLinkRegex = /href="\/problems\/([A-Z0-9_]+)"/gi;
+    let match;
+    while ((match = problemLinkRegex.exec(html)) !== null) {
+      const code = match[1];
+      // Filter out navigation/category links (these are usually short generic strings)
+      if (code && code.length >= 2 && !seenCodes.has(code) && !/^(all|easy|medium|hard|school|beginner|practice)$/i.test(code)) {
+        seenCodes.add(code);
+        solvedProblems.push({
+          platform: 'codechef',
+          platformProblemId: code,
+        });
+      }
+    }
+
+    // Method 2: Also try to extract from JSON data embedded in the page
+    // Some versions of the profile page embed user data as JSON
+    const jsonDataMatch = html.match(/"fully_solved"\s*:\s*\{[^}]*"count"\s*:\s*\d+[^}]*\}/);
+    if (jsonDataMatch) {
+      // Try to extract problem codes from the JSON structure
+      const codeMatches = jsonDataMatch[0].matchAll(/"([A-Z0-9_]{2,})"/g);
+      for (const m of codeMatches) {
+        const code = m[1];
+        if (!seenCodes.has(code)) {
+          seenCodes.add(code);
+          solvedProblems.push({
+            platform: 'codechef',
+            platformProblemId: code,
+          });
+        }
+      }
+    }
+
+    return solvedProblems;
+  } catch (error) {
+    console.error(`CodeChef user solved sync error for ${handle}:`, error);
+    return [];
+  }
 }

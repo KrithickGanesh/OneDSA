@@ -145,7 +145,7 @@ export default function DashboardPage() {
   };
 
   // 4. Live Platform Sync Trigger
-  const supportedSyncPlatforms = ['leetcode', 'codeforces'];
+  const supportedSyncPlatforms = ['leetcode', 'codeforces', 'codechef', 'hackerrank', 'gfg'];
 
   const handleSyncPlatform = async (platform: string) => {
     if (!supportedSyncPlatforms.includes(platform)) {
